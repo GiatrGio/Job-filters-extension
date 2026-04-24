@@ -1,0 +1,79 @@
+import { ENV } from "./env";
+import { getAccessToken } from "./auth";
+import type {
+  EvaluateRequest,
+  EvaluateResponse,
+  FilterCreate,
+  FilterOut,
+  FilterUpdate,
+  MeResponse,
+} from "@/shared/types";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError(401, "not signed in");
+
+  const res = await fetch(`${ENV.API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
+
+  if (!res.ok) {
+    // Read once as text, then try to parse as JSON. Calling res.json()
+    // first and falling back to res.text() throws "body stream already read"
+    // because the stream is consumed on the first call even when parsing
+    // fails.
+    const raw = await res.text();
+    let detail = raw;
+    try {
+      const body = JSON.parse(raw);
+      detail = body?.error ?? body?.detail ?? raw;
+    } catch {
+      // not JSON — fall through with the raw text
+    }
+    throw new ApiError(res.status, detail || res.statusText);
+  }
+
+  // DELETE endpoints return 204 with no body.
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export const api = {
+  evaluate: (body: EvaluateRequest) =>
+    request<EvaluateResponse>("/evaluate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  me: () => request<MeResponse>("/me"),
+
+  listFilters: () => request<FilterOut[]>("/filters"),
+
+  createFilter: (body: FilterCreate) =>
+    request<FilterOut>("/filters", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateFilter: (id: string, body: FilterUpdate) =>
+    request<FilterOut>(`/filters/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteFilter: (id: string) =>
+    request<void>(`/filters/${id}`, { method: "DELETE" }),
+};
