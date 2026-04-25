@@ -30,9 +30,16 @@ export interface EvaluateResponse {
   usage: UsageOut;
 }
 
+// Caps must match app/schemas/profile.py and app/schemas/filter.py.
+export const FILTER_TEXT_MAX = 200;
+export const PROFILE_NAME_MAX = 50;
+export const MAX_PROFILES_PER_USER = 5;
+export const MAX_FILTERS_PER_PROFILE = 10;
+
 export interface FilterOut {
   id: string;
   user_id: string;
+  profile_id: string;
   text: string;
   position: number;
   enabled: boolean;
@@ -50,6 +57,32 @@ export interface FilterUpdate {
   text?: string;
   position?: number;
   enabled?: boolean;
+}
+
+export interface FilterProfileOut {
+  id: string;
+  user_id: string;
+  name: string;
+  position: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FilterProfileWithFilters extends FilterProfileOut {
+  filters: FilterOut[];
+}
+
+export interface FilterProfileCreate {
+  name: string;
+}
+
+export interface FilterProfileUpdate {
+  name?: string;
+}
+
+export interface ReorderRequest {
+  ids: string[];
 }
 
 export interface MeResponse {
@@ -75,6 +108,7 @@ export type ExtensionMessage =
   | { type: "EVALUATION_READY"; job: ScrapedJob; response: EvaluateResponse }
   | { type: "EVALUATION_ERROR"; jobId: string; error: string; status?: number }
   | { type: "RESCAN" }
+  | { type: "REQUEST_RESCAN" }
   | { type: "SIDEPANEL_READY" }
   | { type: "GET_LAST_RESULT" };
 

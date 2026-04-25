@@ -83,6 +83,12 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, _sendR
     void evaluateJob(message.job);
     return false;
   }
+  if (message.type === "REQUEST_RESCAN") {
+    // Side panel asks for the current job to be re-emitted (e.g. after the
+    // user switched the active profile).
+    void requestRescanFromLinkedInTabs();
+    return false;
+  }
   return false;
 });
 

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import type { ExtensionMessage, StoredEvaluation } from "@/shared/types";
+import type {
+  ExtensionMessage,
+  FilterProfileWithFilters,
+  StoredEvaluation,
+} from "@/shared/types";
+import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
 import { ResultRow } from "./components/ResultRow";
@@ -13,6 +18,20 @@ type Status =
 export default function App() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [profiles, setProfiles] = useState<FilterProfileWithFilters[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [switchingProfile, setSwitchingProfile] = useState(false);
+
+  async function loadProfiles() {
+    try {
+      const list = await api.listProfiles();
+      list.sort((a, b) => a.position - b.position);
+      setProfiles(list);
+      setActiveProfileId(list.find((p) => p.is_active)?.id ?? null);
+    } catch {
+      // Ignore — likely not signed in. The signed-in branch below covers UX.
+    }
+  }
 
   useEffect(() => {
     // Long-lived port so the background worker knows the panel is open.
@@ -24,6 +43,7 @@ export default function App() {
       const [last, token] = await Promise.all([getLastEvaluation(), getAccessToken()]);
       setSignedIn(!!token);
       if (last) setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
+      if (token) await loadProfiles();
     })();
 
     const onMessage = (msg: ExtensionMessage) => {
@@ -45,6 +65,28 @@ export default function App() {
       port.disconnect();
     };
   }, []);
+
+  async function onChangeProfile(id: string) {
+    if (id === activeProfileId || switchingProfile) return;
+    const previous = activeProfileId;
+    setActiveProfileId(id); // optimistic
+    setSwitchingProfile(true);
+    try {
+      await api.activateProfile(id);
+      // Ask the background to re-emit the currently viewed job so the user
+      // sees the new profile's evaluation without navigating away and back.
+      chrome.runtime.sendMessage({ type: "REQUEST_RESCAN" } satisfies ExtensionMessage).catch(() => {});
+      await loadProfiles();
+    } catch (err) {
+      setActiveProfileId(previous);
+      setStatus({
+        kind: "error",
+        message: err instanceof ApiError ? err.message : String(err),
+      });
+    } finally {
+      setSwitchingProfile(false);
+    }
+  }
 
   function openOptions() {
     chrome.runtime.openOptionsPage?.();
@@ -127,8 +169,23 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col bg-white text-gray-900">
-      <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-        <h1 className="text-sm font-semibold tracking-tight">LinkedIn Job Filter</h1>
+      <header className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
+        <h1 className="text-sm font-semibold tracking-tight shrink-0">LinkedIn Job Filter</h1>
+        {signedIn && profiles.length > 0 && (
+          <select
+            value={activeProfileId ?? ""}
+            onChange={(e) => onChangeProfile(e.target.value)}
+            disabled={switchingProfile}
+            className="ml-auto min-w-0 max-w-[10rem] truncate rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700 disabled:opacity-60"
+            title="Active profile"
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
       </header>
 
       <main className="flex-1 overflow-y-auto">{evalView}</main>

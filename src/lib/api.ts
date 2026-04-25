@@ -5,8 +5,13 @@ import type {
   EvaluateResponse,
   FilterCreate,
   FilterOut,
+  FilterProfileCreate,
+  FilterProfileOut,
+  FilterProfileUpdate,
+  FilterProfileWithFilters,
   FilterUpdate,
   MeResponse,
+  ReorderRequest,
 } from "@/shared/types";
 
 export class ApiError extends Error {
@@ -60,11 +65,43 @@ export const api = {
 
   me: () => request<MeResponse>("/me"),
 
-  listFilters: () => request<FilterOut[]>("/filters"),
+  // --- profiles --------------------------------------------------------------
+  listProfiles: () => request<FilterProfileWithFilters[]>("/profiles"),
 
-  createFilter: (body: FilterCreate) =>
-    request<FilterOut>("/filters", {
+  createProfile: (body: FilterProfileCreate) =>
+    request<FilterProfileOut>("/profiles", {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  updateProfile: (id: string, body: FilterProfileUpdate) =>
+    request<FilterProfileOut>(`/profiles/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteProfile: (id: string) =>
+    request<void>(`/profiles/${id}`, { method: "DELETE" }),
+
+  activateProfile: (id: string) =>
+    request<FilterProfileOut>(`/profiles/${id}/activate`, { method: "POST" }),
+
+  reorderProfiles: (body: ReorderRequest) =>
+    request<FilterProfileOut[]>("/profiles/reorder", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  // --- filters within a profile ---------------------------------------------
+  createFilter: (profileId: string, body: FilterCreate) =>
+    request<FilterOut>(`/profiles/${profileId}/filters`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  reorderFilters: (profileId: string, body: ReorderRequest) =>
+    request<FilterOut[]>(`/profiles/${profileId}/filters/reorder`, {
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
 
