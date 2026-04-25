@@ -1,26 +1,31 @@
 // Background service worker.
 //
 // Responsibilities:
-//   1. Route messages from the content script.
-//   2. Check local chrome.storage cache before calling the backend.
-//   3. Call the backend /evaluate endpoint (with Supabase JWT).
+//   1. Track whether the side panel is currently open (via a long-lived port).
+//   2. Route messages from the content script — but only evaluate when the
+//      side panel is open, so users don't burn quota on background work they
+//      can't see.
+//   3. Call the backend /evaluate endpoint (with Supabase JWT). The backend
+//      owns the evaluation cache, keyed on (user, job, filters_hash), so it
+//      stays correct when filters change.
 //   4. Forward the result to the side panel (and persist as "last" so the
-//      panel can render immediately on open).
-//   5. Open the side panel the first time a job is scraped in a tab, so the
-//      UX matches Krib Inzicht.
+//      panel can render immediately on subsequent opens).
 //
-// Service workers can be terminated between events, so we never hold state
-// in module scope beyond what survives a restart — anything stateful lives
-// in chrome.storage.
+// Service workers can be terminated between events. The connected-port set
+// below is recreated on wake; that's fine because if the service worker died
+// the side panel's port disconnected too, and the panel will reconnect on its
+// next render.
 
 import { api, ApiError } from "@/lib/api";
-import {
-  getAutoEvalEnabled,
-  getCachedJobResult,
-  putCachedJobResult,
-  setLastEvaluation,
-} from "@/lib/storage";
+import { setLastEvaluation } from "@/lib/storage";
 import type { ExtensionMessage, ScrapedJob, StoredEvaluation } from "@/shared/types";
+
+const SIDEPANEL_PORT_NAME = "sidepanel";
+const sidepanelPorts = new Set<chrome.runtime.Port>();
+
+function isSidepanelOpen(): boolean {
+  return sidepanelPorts.size > 0;
+}
 
 async function forwardToSidepanel(message: ExtensionMessage): Promise<void> {
   // `sendMessage` with no target delivers to all extension pages/workers,
@@ -29,22 +34,10 @@ async function forwardToSidepanel(message: ExtensionMessage): Promise<void> {
   chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-async function evaluateJob(job: ScrapedJob, tabId?: number): Promise<void> {
-  const cached = await getCachedJobResult(job.linkedin_job_id);
-  if (cached) {
-    await setLastEvaluation(cached);
-    await forwardToSidepanel({
-      type: "EVALUATION_READY",
-      job: cached.job,
-      response: cached.response,
-    });
-    return;
-  }
-
+async function evaluateJob(job: ScrapedJob): Promise<void> {
   try {
     const response = await api.evaluate(job);
     const stored: StoredEvaluation = { job, response, storedAt: Date.now() };
-    await putCachedJobResult(stored);
     await setLastEvaluation(stored);
     await forwardToSidepanel({ type: "EVALUATION_READY", job, response });
   } catch (err) {
@@ -57,28 +50,37 @@ async function evaluateJob(job: ScrapedJob, tabId?: number): Promise<void> {
       status,
     });
   }
+}
 
-  // Side-effect: surface the side panel on first evaluation per tab.
-  if (tabId !== undefined) {
-    try {
-      await chrome.sidePanel.open({ tabId });
-    } catch {
-      // Requires a user gesture in some Chrome versions; safe to ignore.
-    }
+// Ask any active LinkedIn tabs to re-emit their current job. Used when the
+// side panel just opened, so the user sees a result for the job they're
+// already viewing instead of having to navigate away and back.
+async function requestRescanFromLinkedInTabs(): Promise<void> {
+  const tabs = await chrome.tabs.query({ url: "https://www.linkedin.com/*" });
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    chrome.tabs.sendMessage(tab.id, { type: "RESCAN" } satisfies ExtensionMessage).catch(() => {});
   }
 }
 
-chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, _sendResponse) => {
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== SIDEPANEL_PORT_NAME) return;
+  sidepanelPorts.add(port);
+  port.onDisconnect.addListener(() => {
+    sidepanelPorts.delete(port);
+  });
+  void requestRescanFromLinkedInTabs();
+});
+
+chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, _sendResponse) => {
   if (message.type === "JOB_SCRAPED") {
-    void (async () => {
-      if (!(await getAutoEvalEnabled())) return;
-      await evaluateJob(message.job, sender.tab?.id);
-    })();
+    if (!isSidepanelOpen()) return false;
+    void evaluateJob(message.job);
     return false;
   }
   if (message.type === "REQUEST_EVALUATION") {
-    // Manual re-evaluate from the side panel (e.g. after toggling auto off/on).
-    void evaluateJob(message.job, sender.tab?.id);
+    // Manual re-evaluate from the side panel.
+    void evaluateJob(message.job);
     return false;
   }
   return false;

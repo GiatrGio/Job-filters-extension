@@ -77,5 +77,15 @@ const observer = new MutationObserver(() => {
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
+// The background worker asks for a re-scan when the side panel opens, so the
+// user sees a result for the job they're already viewing.
+chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
+  if (message.type === "RESCAN") {
+    lastHandledJobId = null;
+    scheduleHandle();
+  }
+  return false;
+});
+
 // Handle the initial load.
 scheduleHandle();

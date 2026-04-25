@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ExtensionMessage, StoredEvaluation } from "@/shared/types";
-import {
-  getAutoEvalEnabled,
-  getLastEvaluation,
-  setAutoEvalEnabled,
-} from "@/lib/storage";
+import { getLastEvaluation } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
 import { ResultRow } from "./components/ResultRow";
 
@@ -16,17 +12,16 @@ type Status =
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [autoEval, setAutoEvalState] = useState<boolean>(true);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Long-lived port so the background worker knows the panel is open.
+    // When this port disconnects (panel closed), the background stops
+    // evaluating jobs — which is the whole point: no work the user can't see.
+    const port = chrome.runtime.connect({ name: "sidepanel" });
+
     void (async () => {
-      const [last, auto, token] = await Promise.all([
-        getLastEvaluation(),
-        getAutoEvalEnabled(),
-        getAccessToken(),
-      ]);
-      setAutoEvalState(auto);
+      const [last, token] = await Promise.all([getLastEvaluation(), getAccessToken()]);
       setSignedIn(!!token);
       if (last) setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
     })();
@@ -45,13 +40,11 @@ export default function App() {
       }
     };
     chrome.runtime.onMessage.addListener(onMessage);
-    return () => chrome.runtime.onMessage.removeListener(onMessage);
+    return () => {
+      chrome.runtime.onMessage.removeListener(onMessage);
+      port.disconnect();
+    };
   }, []);
-
-  async function onToggleAuto(v: boolean) {
-    setAutoEvalState(v);
-    await setAutoEvalEnabled(v);
-  }
 
   function openOptions() {
     chrome.runtime.openOptionsPage?.();
@@ -136,14 +129,6 @@ export default function App() {
     <div className="flex h-full flex-col bg-white text-gray-900">
       <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
         <h1 className="text-sm font-semibold tracking-tight">LinkedIn Job Filter</h1>
-        <label className="flex items-center gap-2 text-xs text-gray-600">
-          Auto
-          <input
-            type="checkbox"
-            checked={autoEval}
-            onChange={(e) => onToggleAuto(e.target.checked)}
-          />
-        </label>
       </header>
 
       <main className="flex-1 overflow-y-auto">{evalView}</main>

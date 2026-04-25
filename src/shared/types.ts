@@ -74,6 +74,7 @@ export type ExtensionMessage =
   | { type: "REQUEST_EVALUATION"; job: ScrapedJob }
   | { type: "EVALUATION_READY"; job: ScrapedJob; response: EvaluateResponse }
   | { type: "EVALUATION_ERROR"; jobId: string; error: string; status?: number }
+  | { type: "RESCAN" }
   | { type: "SIDEPANEL_READY" }
   | { type: "GET_LAST_RESULT" };
 
