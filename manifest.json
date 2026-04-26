@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "LinkedIn Job Filter",
+  "name": "canvasjob",
   "description": "Evaluate LinkedIn job postings against your custom, free-text filters.",
   "version": "0.1.0",
   "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs"],
@@ -10,7 +10,7 @@
     "http://localhost:8000/*"
   ],
   "action": {
-    "default_title": "Open LinkedIn Job Filter"
+    "default_title": "Open canvasjob"
   },
   "side_panel": {
     "default_path": "src/sidepanel/index.html"

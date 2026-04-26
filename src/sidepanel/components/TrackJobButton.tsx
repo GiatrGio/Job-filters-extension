@@ -74,12 +74,12 @@ export function TrackJobButton({ job }: { job: ScrapedJob }) {
   if (tracked) {
     return (
       <div className="flex items-center gap-2 text-xs">
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 font-medium">
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
           <Check size={12} /> Tracked
         </span>
         <button
           onClick={() => openDashboardJob(tracked.id)}
-          className="inline-flex items-center gap-1 text-brand-accent hover:underline"
+          className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
         >
           Open in dashboard <ExternalLink size={11} />
         </button>
@@ -92,12 +92,12 @@ export function TrackJobButton({ job }: { job: ScrapedJob }) {
       <button
         onClick={track}
         disabled={saving}
-        className="inline-flex items-center gap-1.5 rounded-md bg-brand-accent text-white text-xs font-medium px-2.5 py-1 hover:bg-[#085bb0] disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
       >
         <Bookmark size={12} />
         {saving ? "Saving…" : "Track this job"}
       </button>
-      {error && <span className="text-[11px] text-red-700">{error}</span>}
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   );
 }

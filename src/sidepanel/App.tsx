@@ -109,11 +109,11 @@ export default function App() {
   const evalView = (() => {
     if (signedIn === false) {
       return (
-        <div className="p-4 text-sm text-gray-700">
+        <div className="p-4 text-sm text-foreground">
           <p className="mb-2">Sign in to start evaluating jobs against your filters.</p>
           <button
             onClick={openOptions}
-            className="px-3 py-1.5 rounded bg-brand-accent text-white text-sm"
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Open settings
           </button>
@@ -123,7 +123,7 @@ export default function App() {
 
     if (status.kind === "idle") {
       return (
-        <div className="p-4 text-sm text-gray-600">
+        <div className="p-4 text-sm text-muted-foreground">
           Open a LinkedIn job posting to see an evaluation.
         </div>
       );
@@ -131,7 +131,7 @@ export default function App() {
 
     if (status.kind === "loading") {
       return (
-        <div className="p-4 text-sm text-gray-600">Evaluating job {status.jobId}…</div>
+        <div className="p-4 text-sm text-muted-foreground">Evaluating job {status.jobId}…</div>
       );
     }
 
@@ -139,14 +139,14 @@ export default function App() {
       const quota = status.status === 402;
       return (
         <div className="p-4 text-sm">
-          <p className="font-medium text-red-700">
+          <p className="font-medium text-destructive">
             {quota ? "Monthly quota reached." : "Evaluation failed."}
           </p>
-          <p className="mt-1 text-gray-600">{status.message}</p>
+          <p className="mt-1 text-muted-foreground">{status.message}</p>
           {quota && me?.plan === "free" && (
             <button
               onClick={openPricing}
-              className="mt-3 w-full rounded-md bg-brand-accent text-white px-3 py-2 text-sm font-medium hover:bg-[#085bb0]"
+              className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Upgrade to Pro for unlimited evaluations
             </button>
@@ -161,20 +161,20 @@ export default function App() {
       <div className="p-4">
         <div className="mb-3">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">
               {cached ? "Cached" : "Fresh"} evaluation
             </div>
             <TrackJobButton job={job} />
           </div>
-          <div className="text-base font-medium text-gray-900 mt-1">{job.job_title ?? "Job"}</div>
-          <div className="text-sm text-gray-600">
+          <div className="mt-1 text-base font-medium text-foreground">{job.job_title ?? "Job"}</div>
+          <div className="text-sm text-muted-foreground">
             {[job.job_company, job.job_location].filter(Boolean).join(" · ")}
           </div>
         </div>
         {response.results.length === 0 ? (
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-muted-foreground">
             You haven't configured any filters yet.{" "}
-            <button className="underline" onClick={openOptions}>
+            <button className="font-medium text-primary underline-offset-4 hover:underline" onClick={openOptions}>
               Add some
             </button>
             .
@@ -200,15 +200,15 @@ export default function App() {
   const showSoftUpgrade = isFreePlan && usage !== null && usageRatio >= 0.8 && usageRatio < 1;
 
   return (
-    <div className="flex h-full flex-col bg-white text-gray-900">
-      <header className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
-        <h1 className="text-sm font-semibold tracking-tight shrink-0">LinkedIn Job Filter</h1>
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <header className="flex min-h-12 items-center gap-2 border-b px-3 py-2">
+        <h1 className="shrink-0 text-sm font-semibold tracking-tight">canvasjob</h1>
         {signedIn && profiles.length > 0 && (
           <select
             value={activeProfileId ?? ""}
             onChange={(e) => onChangeProfile(e.target.value)}
             disabled={switchingProfile}
-            className="ml-auto min-w-0 max-w-[10rem] truncate rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700 disabled:opacity-60"
+            className="ml-auto min-w-0 max-w-[10rem] truncate rounded-md border border-input bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
             title="Active profile"
           >
             {profiles.map((p) => (
@@ -222,11 +222,11 @@ export default function App() {
 
       <main className="flex-1 overflow-y-auto">{evalView}</main>
 
-      <footer className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500">
+      <footer className="border-t px-4 py-2 text-xs text-muted-foreground">
         {showSoftUpgrade && (
           <button
             onClick={openPricing}
-            className="mb-1 w-full text-center text-amber-700 hover:underline"
+            className="mb-1 w-full text-center font-medium text-primary underline-offset-4 hover:underline"
           >
             Approaching your monthly limit — upgrade for unlimited
           </button>
@@ -236,7 +236,7 @@ export default function App() {
             isFreePlan ? (
               <button
                 onClick={openPricing}
-                className="hover:text-brand-accent hover:underline"
+                className="underline-offset-4 hover:text-foreground hover:underline"
                 title="See Pro plan"
               >
                 {usage.used} / {usage.limit} this month
@@ -247,7 +247,7 @@ export default function App() {
           ) : (
             <span>Usage will appear after your first evaluation</span>
           )}
-          <button onClick={openOptions} className="underline">
+          <button onClick={openOptions} className="font-medium text-primary underline-offset-4 hover:underline">
             Settings
           </button>
         </div>

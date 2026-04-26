@@ -11,5 +11,5 @@ if (!ENV.SUPABASE_URL || !ENV.SUPABASE_PUBLISHABLE_KEY) {
   // Surface misconfiguration loudly during dev — the extension is useless
   // without Supabase auth wired up.
   // eslint-disable-next-line no-console
-  console.warn("[LinkedIn Job Filter] Missing Supabase env vars — check .env");
+  console.warn("[canvasjob] Missing Supabase env vars — check .env");
 }
