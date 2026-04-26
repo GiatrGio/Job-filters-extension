@@ -91,6 +91,44 @@ export interface MeResponse {
   usage: UsageOut;
 }
 
+// Tracker — mirrors app/schemas/application.py on the backend. Kept in sync
+// manually with canvasjob-web/lib/types.ts; both must agree with pydantic.
+export type ApplicationStatus =
+  | "saved"
+  | "applied"
+  | "interviewing"
+  | "offer"
+  | "rejected"
+  | "withdrawn";
+
+export interface ApplicationCreate {
+  source: string;
+  external_id: string;
+  title?: string | null;
+  company?: string | null;
+  location?: string | null;
+  url?: string | null;
+  description?: string | null;
+  status?: ApplicationStatus;
+}
+
+export interface Application {
+  id: string;
+  user_id: string;
+  source: string;
+  external_id: string;
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  url: string | null;
+  description: string | null;
+  status: ApplicationStatus;
+  applied_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Scraped from the LinkedIn DOM by the content script.
 export interface ScrapedJob {
   linkedin_job_id: string;

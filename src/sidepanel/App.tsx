@@ -2,12 +2,16 @@ import { useEffect, useState } from "react";
 import type {
   ExtensionMessage,
   FilterProfileWithFilters,
+  MeResponse,
   StoredEvaluation,
+  UsageOut,
 } from "@/shared/types";
 import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
+import { openPricing } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
+import { TrackJobButton } from "./components/TrackJobButton";
 
 type Status =
   | { kind: "idle" }
@@ -21,6 +25,10 @@ export default function App() {
   const [profiles, setProfiles] = useState<FilterProfileWithFilters[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [switchingProfile, setSwitchingProfile] = useState(false);
+  // /me drives the upgrade CTAs (hidden for pro users) and the footer's
+  // initial usage line — without it we'd have to wait for the first
+  // evaluation response to know how much quota is left.
+  const [me, setMe] = useState<MeResponse | null>(null);
 
   async function loadProfiles() {
     try {
@@ -43,7 +51,13 @@ export default function App() {
       const [last, token] = await Promise.all([getLastEvaluation(), getAccessToken()]);
       setSignedIn(!!token);
       if (last) setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
-      if (token) await loadProfiles();
+      if (token) {
+        await loadProfiles();
+        api.me().then(setMe).catch(() => {
+          // /me failures are non-fatal — the panel still works without plan info,
+          // we just hide the upgrade CTAs.
+        });
+      }
     })();
 
     const onMessage = (msg: ExtensionMessage) => {
@@ -124,11 +138,19 @@ export default function App() {
     if (status.kind === "error") {
       const quota = status.status === 402;
       return (
-        <div className="p-4 text-sm text-red-700">
-          <p className="font-medium">
+        <div className="p-4 text-sm">
+          <p className="font-medium text-red-700">
             {quota ? "Monthly quota reached." : "Evaluation failed."}
           </p>
           <p className="mt-1 text-gray-600">{status.message}</p>
+          {quota && me?.plan === "free" && (
+            <button
+              onClick={openPricing}
+              className="mt-3 w-full rounded-md bg-brand-accent text-white px-3 py-2 text-sm font-medium hover:bg-[#085bb0]"
+            >
+              Upgrade to Pro for unlimited evaluations
+            </button>
+          )}
         </div>
       );
     }
@@ -138,10 +160,13 @@ export default function App() {
     return (
       <div className="p-4">
         <div className="mb-3">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">
-            {cached ? "Cached" : "Fresh"} evaluation
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">
+              {cached ? "Cached" : "Fresh"} evaluation
+            </div>
+            <TrackJobButton job={job} />
           </div>
-          <div className="text-base font-medium text-gray-900">{job.job_title ?? "Job"}</div>
+          <div className="text-base font-medium text-gray-900 mt-1">{job.job_title ?? "Job"}</div>
           <div className="text-sm text-gray-600">
             {[job.job_company, job.job_location].filter(Boolean).join(" · ")}
           </div>
@@ -165,7 +190,14 @@ export default function App() {
     );
   })();
 
-  const usage = status.kind === "ready" ? status.evaluation.response.usage : null;
+  // Prefer the fresh usage from the latest evaluation response (most accurate
+  // — atomic with the increment); fall back to /me's snapshot for the idle
+  // state so users see their counter as soon as they open the panel.
+  const usage: UsageOut | null =
+    status.kind === "ready" ? status.evaluation.response.usage : me?.usage ?? null;
+  const isFreePlan = me?.plan === "free";
+  const usageRatio = usage && usage.limit > 0 ? usage.used / usage.limit : 0;
+  const showSoftUpgrade = isFreePlan && usage !== null && usageRatio >= 0.8 && usageRatio < 1;
 
   return (
     <div className="flex h-full flex-col bg-white text-gray-900">
@@ -190,15 +222,35 @@ export default function App() {
 
       <main className="flex-1 overflow-y-auto">{evalView}</main>
 
-      <footer className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500 flex items-center justify-between">
-        <span>
-          {usage
-            ? `${usage.used} / ${usage.limit} this month`
-            : "Usage will appear after your first evaluation"}
-        </span>
-        <button onClick={openOptions} className="underline">
-          Settings
-        </button>
+      <footer className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500">
+        {showSoftUpgrade && (
+          <button
+            onClick={openPricing}
+            className="mb-1 w-full text-center text-amber-700 hover:underline"
+          >
+            Approaching your monthly limit — upgrade for unlimited
+          </button>
+        )}
+        <div className="flex items-center justify-between">
+          {usage ? (
+            isFreePlan ? (
+              <button
+                onClick={openPricing}
+                className="hover:text-brand-accent hover:underline"
+                title="See Pro plan"
+              >
+                {usage.used} / {usage.limit} this month
+              </button>
+            ) : (
+              <span>{usage.used} / {usage.limit} this month</span>
+            )
+          ) : (
+            <span>Usage will appear after your first evaluation</span>
+          )}
+          <button onClick={openOptions} className="underline">
+            Settings
+          </button>
+        </div>
       </footer>
     </div>
   );

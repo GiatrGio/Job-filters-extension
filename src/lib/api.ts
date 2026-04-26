@@ -1,6 +1,8 @@
 import { ENV } from "./env";
 import { getAccessToken } from "./auth";
 import type {
+  Application,
+  ApplicationCreate,
   EvaluateRequest,
   EvaluateResponse,
   FilterCreate,
@@ -113,4 +115,28 @@ export const api = {
 
   deleteFilter: (id: string) =>
     request<void>(`/filters/${id}`, { method: "DELETE" }),
+
+  // --- tracker (/applications) ---------------------------------------------
+  // 404 (not yet tracked) is a normal answer, not a failure. The "Track this
+  // job" button calls this on mount to decide whether to render Track or
+  // "Tracked ✓".
+  getApplicationByJob: async (
+    source: string,
+    externalId: string,
+  ): Promise<Application | null> => {
+    try {
+      return await request<Application>(
+        `/applications/by-job/${encodeURIComponent(source)}/${encodeURIComponent(externalId)}`,
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
+  createApplication: (body: ApplicationCreate) =>
+    request<Application>("/applications", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
