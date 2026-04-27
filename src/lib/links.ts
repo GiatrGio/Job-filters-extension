@@ -17,8 +17,8 @@ export function openPricing(): void {
   openTab(`${ENV.WEB_URL}/pricing`);
 }
 
-export function openDashboardJob(applicationId: string): void {
-  openTab(`${ENV.WEB_URL}/app/jobs/${applicationId}`);
+export function openDashboardBoard(): void {
+  openTab(`${ENV.WEB_URL}/app?view=board`);
 }
 
 export function openDashboard(): void {

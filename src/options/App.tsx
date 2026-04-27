@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Check,
   GripVertical,
   Plus,
   Star,
@@ -398,6 +399,7 @@ function ProfileCard({
       await onChange();
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
+      throw err;
     }
   }
 
@@ -598,9 +600,11 @@ function FilterEditor({
   );
 
   const [localOrder, setLocalOrder] = useState<FilterOut[] | null>(null);
+  const [addingFilter, setAddingFilter] = useState(false);
   const display = localOrder ?? filters;
 
   useEffect(() => setLocalOrder(null), [profile.filters]);
+  useEffect(() => setAddingFilter(false), [profile.id]);
 
   async function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e;
@@ -619,18 +623,22 @@ function FilterEditor({
     }
   }
 
-  async function add() {
-    if (display.length >= MAX_FILTERS_PER_PROFILE) return;
+  function add() {
+    if (display.length >= MAX_FILTERS_PER_PROFILE || addingFilter) return;
+    setAddingFilter(true);
+  }
+
+  async function createDraftFilter(text: string) {
     try {
-      // Create with placeholder text so the row appears immediately and the
-      // user can edit in place. Empty text would fail the 1-char min.
-      await api.createFilter(profile.id, { text: "New filter" });
+      await api.createFilter(profile.id, { text });
+      setAddingFilter(false);
       await onChange();
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
     }
   }
 
+  const visibleCount = display.length + (addingFilter ? 1 : 0);
   const atLimit = display.length >= MAX_FILTERS_PER_PROFILE;
 
   return (
@@ -640,7 +648,7 @@ function FilterEditor({
           {profile.name} Profile Filters
         </h2>
         <span className="text-sm text-muted-foreground">
-          {display.length} / {MAX_FILTERS_PER_PROFILE} filters
+          {visibleCount} / {MAX_FILTERS_PER_PROFILE} filters
         </span>
       </div>
 
@@ -674,18 +682,109 @@ function FilterEditor({
                 )}
               </SortableRow>
             ))}
+            {addingFilter && (
+              <NewFilterDraft
+                onConfirm={createDraftFilter}
+                onCancel={() => setAddingFilter(false)}
+              />
+            )}
           </div>
         </SortableContext>
       </DndContext>
 
       <button
         onClick={add}
-        disabled={atLimit}
+        disabled={atLimit || addingFilter}
         className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus size={18} />
-        {atLimit ? "Filter limit reached" : "Add New Filter"}
+        {addingFilter ? "Confirm the new filter" : atLimit ? "Filter limit reached" : "Add New Filter"}
       </button>
+    </div>
+  );
+}
+
+function NewFilterDraft({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: (text: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+
+  async function submit() {
+    const trimmed = text.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    try {
+      await onConfirm(trimmed);
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border bg-card p-3 text-card-foreground shadow-sm">
+      <div className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-input bg-background" />
+      <div className="min-w-0 flex-1">
+        <textarea
+          ref={textareaRef}
+          value={text}
+          maxLength={FILTER_TEXT_MAX}
+          rows={1}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void submit();
+            }
+            if (e.key === "Escape") {
+              onCancel();
+            }
+          }}
+          placeholder="New filter"
+          className="w-full resize-none overflow-hidden rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
+        />
+        <div className="mt-1 text-right text-xs text-muted-foreground">
+          {text.length} / {FILTER_TEXT_MAX}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 pt-1">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!text.trim() || saving}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          title="Confirm filter"
+          aria-label="Confirm filter"
+        >
+          <Check size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          title="Cancel"
+          aria-label="Cancel"
+        >
+          <X size={16} />
+        </button>
+      </div>
     </div>
   );
 }

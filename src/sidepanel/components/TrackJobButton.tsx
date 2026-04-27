@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bookmark, Check, ExternalLink } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { openDashboardJob } from "@/lib/links";
+import { openDashboardBoard } from "@/lib/links";
 import type { Application, ScrapedJob } from "@/shared/types";
 
 /**
@@ -78,7 +78,7 @@ export function TrackJobButton({ job }: { job: ScrapedJob }) {
           <Check size={12} /> Tracked
         </span>
         <button
-          onClick={() => openDashboardJob(tracked.id)}
+          onClick={openDashboardBoard}
           className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
         >
           Open in dashboard <ExternalLink size={11} />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import type {
   ExtensionMessage,
   FilterProfileWithFilters,
@@ -25,6 +26,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<FilterProfileWithFilters[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [switchingProfile, setSwitchingProfile] = useState(false);
+  const [refreshingFilters, setRefreshingFilters] = useState(false);
   // /me drives the upgrade CTAs (hidden for pro users) and the footer's
   // initial usage line — without it we'd have to wait for the first
   // evaluation response to know how much quota is left.
@@ -104,6 +106,23 @@ export default function App() {
 
   function openOptions() {
     chrome.runtime.openOptionsPage?.();
+  }
+
+  async function refreshFilters() {
+    if (refreshingFilters) return;
+    setRefreshingFilters(true);
+    try {
+      await loadProfiles();
+      api.me().then(setMe).catch(() => {});
+      chrome.runtime.sendMessage({ type: "REQUEST_RESCAN" } satisfies ExtensionMessage).catch(() => {});
+    } catch (err) {
+      setStatus({
+        kind: "error",
+        message: err instanceof ApiError ? err.message : String(err),
+      });
+    } finally {
+      setRefreshingFilters(false);
+    }
   }
 
   const evalView = (() => {
@@ -203,12 +222,23 @@ export default function App() {
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex min-h-12 items-center gap-2 border-b px-3 py-2">
         <h1 className="shrink-0 text-sm font-semibold tracking-tight">canvasjob</h1>
+        {signedIn && (
+          <button
+            onClick={refreshFilters}
+            disabled={refreshingFilters}
+            className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            title="Refresh filters"
+            aria-label="Refresh filters"
+          >
+            <RefreshCw size={14} className={refreshingFilters ? "animate-spin" : ""} />
+          </button>
+        )}
         {signedIn && profiles.length > 0 && (
           <select
             value={activeProfileId ?? ""}
             onChange={(e) => onChangeProfile(e.target.value)}
             disabled={switchingProfile}
-            className="ml-auto min-w-0 max-w-[10rem] truncate rounded-md border border-input bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
+            className="min-w-0 max-w-[9rem] truncate rounded-md border border-input bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
             title="Active profile"
           >
             {profiles.map((p) => (
