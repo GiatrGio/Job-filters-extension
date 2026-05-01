@@ -31,6 +31,7 @@ import {
   MAX_PROFILES_PER_USER,
   PROFILE_NAME_MAX,
   type FilterOut,
+  type FilterProfileOut,
   type FilterProfileWithFilters,
   type MeResponse,
 } from "@/shared/types";
@@ -214,6 +215,21 @@ function SortableRow({
 // Profiles editor (two-pane container)
 // ---------------------------------------------------------------------------
 
+// Mutators apply server responses to local state instead of refetching the
+// whole list — keeps the UI mounted across CRUD actions, no flash of the
+// "Loading…" placeholder. `refresh` is still used for the initial load and
+// as a safety net if a mutation puts state in an unknown shape.
+interface Mutators {
+  addProfile: (p: FilterProfileOut) => void;
+  updateProfile: (p: FilterProfileOut) => void;
+  deleteProfile: (id: string) => void;
+  activateProfile: (id: string) => void;
+  addFilter: (profileId: string, f: FilterOut) => void;
+  updateFilter: (f: FilterOut) => void;
+  deleteFilter: (profileId: string, filterId: string) => void;
+  reorderFilters: (profileId: string, ordered: FilterOut[]) => void;
+}
+
 function ProfilesEditor() {
   const [profiles, setProfiles] = useState<FilterProfileWithFilters[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -245,6 +261,68 @@ function ProfilesEditor() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const mutators = useMemo<Mutators>(
+    () => ({
+      addProfile: (p) =>
+        setProfiles((prev) => [...prev, { ...p, filters: [] }]),
+      updateProfile: (p) =>
+        setProfiles((prev) =>
+          prev.map((x) => (x.id === p.id ? { ...x, ...p } : x)),
+        ),
+      deleteProfile: (id) => {
+        setProfiles((prev) => prev.filter((p) => p.id !== id));
+        setSelectedId((prevSel) => {
+          if (prevSel !== id) return prevSel;
+          const remaining = profiles.filter((p) => p.id !== id);
+          return (
+            remaining.find((p) => p.is_active)?.id ?? remaining[0]?.id ?? null
+          );
+        });
+      },
+      activateProfile: (id) =>
+        setProfiles((prev) =>
+          prev.map((p) => ({ ...p, is_active: p.id === id })),
+        ),
+      addFilter: (profileId, f) =>
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === profileId ? { ...p, filters: [...p.filters, f] } : p,
+          ),
+        ),
+      updateFilter: (f) =>
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === f.profile_id
+              ? {
+                  ...p,
+                  filters: p.filters.map((x) => (x.id === f.id ? f : x)),
+                }
+              : p,
+          ),
+        ),
+      deleteFilter: (profileId, filterId) =>
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === profileId
+              ? { ...p, filters: p.filters.filter((f) => f.id !== filterId) }
+              : p,
+          ),
+        ),
+      reorderFilters: (profileId, ordered) =>
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === profileId
+              ? {
+                  ...p,
+                  filters: ordered.map((f, i) => ({ ...f, position: i })),
+                }
+              : p,
+          ),
+        ),
+    }),
+    [profiles],
+  );
 
   const selected = useMemo(
     () => profiles.find((p) => p.id === selectedId) ?? null,
@@ -307,7 +385,7 @@ function ProfilesEditor() {
                         isSelected={p.id === selectedId}
                         canDelete={profiles.length > 1}
                         onSelect={() => setSelectedId(p.id)}
-                        onChange={refresh}
+                        mutators={mutators}
                         onError={setError}
                         dragAttributes={attributes}
                         dragListeners={listeners}
@@ -322,7 +400,7 @@ function ProfilesEditor() {
           <div className="mt-4">
             <NewProfileButton
               disabled={profiles.length >= MAX_PROFILES_PER_USER}
-              onCreated={refresh}
+              mutators={mutators}
               onError={setError}
             />
           </div>
@@ -337,7 +415,11 @@ function ProfilesEditor() {
         {/* Right pane — filters */}
         <section className="min-w-0 md:border-l md:pl-6">
           {selected ? (
-            <FilterEditor profile={selected} onChange={refresh} onError={setError} />
+            <FilterEditor
+              profile={selected}
+              mutators={mutators}
+              onError={setError}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">No profile selected.</p>
           )}
@@ -356,7 +438,7 @@ function ProfileCard({
   isSelected,
   canDelete,
   onSelect,
-  onChange,
+  mutators,
   onError,
   dragAttributes,
   dragListeners,
@@ -365,7 +447,7 @@ function ProfileCard({
   isSelected: boolean;
   canDelete: boolean;
   onSelect: () => void;
-  onChange: () => Promise<void>;
+  mutators: Mutators;
   onError: (msg: string) => void;
   dragAttributes: ReturnType<typeof useSortable>["attributes"];
   dragListeners: ReturnType<typeof useSortable>["listeners"];
@@ -383,8 +465,8 @@ function ProfileCard({
       return;
     }
     try {
-      await api.updateProfile(profile.id, { name: t });
-      await onChange();
+      const updated = await api.updateProfile(profile.id, { name: t });
+      mutators.updateProfile(updated);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
       setDraft(profile.name);
@@ -396,7 +478,7 @@ function ProfileCard({
     if (profile.is_active) return;
     try {
       await api.activateProfile(profile.id);
-      await onChange();
+      mutators.activateProfile(profile.id);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
       throw err;
@@ -409,7 +491,7 @@ function ProfileCard({
     if (!confirm(`Delete profile "${profile.name}" and all its filters?`)) return;
     try {
       await api.deleteProfile(profile.id);
-      await onChange();
+      mutators.deleteProfile(profile.id);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
     }
@@ -504,11 +586,11 @@ function ProfileCard({
 
 function NewProfileButton({
   disabled,
-  onCreated,
+  mutators,
   onError,
 }: {
   disabled: boolean;
-  onCreated: () => Promise<void>;
+  mutators: Mutators;
   onError: (msg: string) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
@@ -519,10 +601,10 @@ function NewProfileButton({
     const t = name.trim();
     if (!t || disabled) return;
     try {
-      await api.createProfile({ name: t });
+      const created = await api.createProfile({ name: t });
       setName("");
       setShowForm(false);
-      await onCreated();
+      mutators.addProfile(created);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
     }
@@ -583,11 +665,11 @@ function NewProfileButton({
 
 function FilterEditor({
   profile,
-  onChange,
+  mutators,
   onError,
 }: {
   profile: FilterProfileWithFilters;
-  onChange: () => Promise<void>;
+  mutators: Mutators;
   onError: (msg: string) => void;
 }) {
   const sensors = useSensors(
@@ -616,7 +698,7 @@ function FilterEditor({
     setLocalOrder(reordered);
     try {
       await api.reorderFilters(profile.id, { ids: reordered.map((f) => f.id) });
-      await onChange();
+      mutators.reorderFilters(profile.id, reordered);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
       setLocalOrder(null);
@@ -630,9 +712,9 @@ function FilterEditor({
 
   async function createDraftFilter(text: string) {
     try {
-      await api.createFilter(profile.id, { text });
+      const created = await api.createFilter(profile.id, { text });
       setAddingFilter(false);
-      await onChange();
+      mutators.addFilter(profile.id, created);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
     }
@@ -674,7 +756,7 @@ function FilterEditor({
                 {({ attributes, listeners }) => (
                   <FilterCard
                     filter={f}
-                    onChange={onChange}
+                    mutators={mutators}
                     onError={onError}
                     dragAttributes={attributes}
                     dragListeners={listeners}
@@ -791,13 +873,13 @@ function NewFilterDraft({
 
 function FilterCard({
   filter,
-  onChange,
+  mutators,
   onError,
   dragAttributes,
   dragListeners,
 }: {
   filter: FilterOut;
-  onChange: () => Promise<void>;
+  mutators: Mutators;
   onError: (msg: string) => void;
   dragAttributes: ReturnType<typeof useSortable>["attributes"];
   dragListeners: ReturnType<typeof useSortable>["listeners"];
@@ -823,8 +905,8 @@ function FilterCard({
     }
     if (t === filter.text) return;
     try {
-      await api.updateFilter(filter.id, { text: t });
-      await onChange();
+      const updated = await api.updateFilter(filter.id, { text: t });
+      mutators.updateFilter(updated);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
       setText(filter.text);
@@ -833,8 +915,8 @@ function FilterCard({
 
   async function toggle(enabled: boolean) {
     try {
-      await api.updateFilter(filter.id, { enabled });
-      await onChange();
+      const updated = await api.updateFilter(filter.id, { enabled });
+      mutators.updateFilter(updated);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
     }
@@ -844,7 +926,7 @@ function FilterCard({
     if (!confirm("Delete this filter?")) return;
     try {
       await api.deleteFilter(filter.id);
-      await onChange();
+      mutators.deleteFilter(filter.profile_id, filter.id);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : String(err));
     }
