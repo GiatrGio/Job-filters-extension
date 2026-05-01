@@ -31,6 +31,10 @@ export default function App() {
   // initial usage line — without it we'd have to wait for the first
   // evaluation response to know how much quota is left.
   const [me, setMe] = useState<MeResponse | null>(null);
+  // Tracked separately so the footer keeps showing the most recent value
+  // during the next evaluation's loading state, instead of snapping back
+  // to /me's session-start snapshot.
+  const [usage, setUsage] = useState<UsageOut | null>(null);
 
   async function loadProfiles() {
     try {
@@ -52,10 +56,16 @@ export default function App() {
     void (async () => {
       const [last, token] = await Promise.all([getLastEvaluation(), getAccessToken()]);
       setSignedIn(!!token);
-      if (last) setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
+      if (last) {
+        setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
+        setUsage(last.response.usage);
+      }
       if (token) {
         await loadProfiles();
-        api.me().then(setMe).catch(() => {
+        api.me().then((m) => {
+          setMe(m);
+          setUsage(m.usage);
+        }).catch(() => {
           // /me failures are non-fatal — the panel still works without plan info,
           // we just hide the upgrade CTAs.
         });
@@ -71,6 +81,7 @@ export default function App() {
           evaluation: { job: msg.job, response: msg.response, storedAt: Date.now() },
           cached: msg.response.cached,
         });
+        setUsage(msg.response.usage);
       } else if (msg.type === "EVALUATION_ERROR") {
         setStatus({ kind: "error", message: msg.error, status: msg.status });
       }
@@ -113,7 +124,10 @@ export default function App() {
     setRefreshingFilters(true);
     try {
       await loadProfiles();
-      api.me().then(setMe).catch(() => {});
+      api.me().then((m) => {
+        setMe(m);
+        setUsage(m.usage);
+      }).catch(() => {});
       chrome.runtime.sendMessage({ type: "REQUEST_RESCAN" } satisfies ExtensionMessage).catch(() => {});
     } catch (err) {
       setStatus({
@@ -209,11 +223,6 @@ export default function App() {
     );
   })();
 
-  // Prefer the fresh usage from the latest evaluation response (most accurate
-  // — atomic with the increment); fall back to /me's snapshot for the idle
-  // state so users see their counter as soon as they open the panel.
-  const usage: UsageOut | null =
-    status.kind === "ready" ? status.evaluation.response.usage : me?.usage ?? null;
   const isFreePlan = me?.plan === "free";
   const usageRatio = usage && usage.limit > 0 ? usage.used / usage.limit : 0;
   const showSoftUpgrade = isFreePlan && usage !== null && usageRatio >= 0.8 && usageRatio < 1;
