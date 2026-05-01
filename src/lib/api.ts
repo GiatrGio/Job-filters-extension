@@ -12,6 +12,8 @@ import type {
   FilterProfileUpdate,
   FilterProfileWithFilters,
   FilterUpdate,
+  FilterValidationRequest,
+  FilterValidationResponse,
   MeResponse,
   ReorderRequest,
 } from "@/shared/types";
@@ -115,6 +117,12 @@ export const api = {
 
   deleteFilter: (id: string) =>
     request<void>(`/filters/${id}`, { method: "DELETE" }),
+
+  validateFilter: (body: FilterValidationRequest) =>
+    request<FilterValidationResponse>("/filters/validate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // --- tracker (/applications) ---------------------------------------------
   // 404 (not yet tracked) is a normal answer, not a failure. The "Track this

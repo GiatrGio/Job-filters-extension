@@ -96,6 +96,22 @@ export interface MeResponse {
   usage: UsageOut;
 }
 
+// Filter quality validation. The backend classifies a single user-supplied
+// filter into one of three buckets so the UI can either accept silently
+// (good), warn but allow (vague), or block (rejected).
+export type FilterValidationVerdict = "good" | "vague" | "rejected";
+
+export interface FilterValidationRequest {
+  text: string;
+}
+
+export interface FilterValidationResponse {
+  verdict: FilterValidationVerdict;
+  reason: string;
+  suggestion: string | null;
+  usage: UsageOut;
+}
+
 // Tracker — mirrors app/schemas/application.py on the backend. Kept in sync
 // manually with canvasjob-web/lib/types.ts; both must agree with pydantic.
 export type ApplicationStatus =
