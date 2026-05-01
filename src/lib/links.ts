@@ -24,3 +24,7 @@ export function openDashboardBoard(): void {
 export function openDashboard(): void {
   openTab(`${ENV.WEB_URL}/app`);
 }
+
+export function openHowItWorks(): void {
+  openTab(`${ENV.WEB_URL}/#how-it-works`);
+}

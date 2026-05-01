@@ -36,6 +36,11 @@ export const PROFILE_NAME_MAX = 50;
 export const MAX_PROFILES_PER_USER = 5;
 export const MAX_FILTERS_PER_PROFILE = 10;
 
+// Marker for the auto-seeded starter profile. Must match the backend's
+// STARTER_PROFILE_NAME in app/routers/profiles.py — the options page
+// uses this to decide whether to show the "edit or delete me" banner.
+export const STARTER_PROFILE_NAME = "Starter pack";
+
 export interface FilterOut {
   id: string;
   user_id: string;

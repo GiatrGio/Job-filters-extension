@@ -17,6 +17,7 @@
 // next render.
 
 import { api, ApiError } from "@/lib/api";
+import { ENV } from "@/lib/env";
 import { setLastEvaluation } from "@/lib/storage";
 import type { ExtensionMessage, ScrapedJob, StoredEvaluation } from "@/shared/types";
 
@@ -99,9 +100,15 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
-// On install, make the side-panel button work on LinkedIn tabs by default.
-chrome.runtime.onInstalled.addListener(() => {
+// On install, make the side-panel button work on LinkedIn tabs by default,
+// and on a fresh install (not update / browser reload) open the website's
+// "How it works" anchor so the user gets the 30-second mental model before
+// they touch anything.
+chrome.runtime.onInstalled.addListener((details) => {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch(() => {});
+  if (details.reason === "install") {
+    chrome.tabs.create({ url: `${ENV.WEB_URL}/#how-it-works`, active: true }).catch(() => {});
+  }
 });

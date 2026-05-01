@@ -16,8 +16,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Check,
+  CheckCircle2,
   GripVertical,
+  HelpCircle,
+  Lightbulb,
+  ListChecks,
   Plus,
+  Search,
   Star,
   Trash2,
   X,
@@ -25,11 +30,13 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { getSupabase, signOut } from "@/lib/auth";
 import { openPricing } from "@/lib/links";
+import { getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import {
   FILTER_TEXT_MAX,
   MAX_FILTERS_PER_PROFILE,
   MAX_PROFILES_PER_USER,
   PROFILE_NAME_MAX,
+  STARTER_PROFILE_NAME,
   type FilterOut,
   type FilterProfileOut,
   type FilterProfileWithFilters,
@@ -208,6 +215,148 @@ function SortableRow({
     >
       {children({ attributes, listeners })}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding strip — three-step explainer + mock result preview shown above
+// the profiles editor for first-time users. Dismissable; persists in
+// chrome.storage.local so the strip stays gone across sessions and devices
+// that share the same Chrome profile sync.
+// ---------------------------------------------------------------------------
+
+function HowItWorksStrip() {
+  const [show, setShow] = useState<boolean | null>(null);
+  useEffect(() => {
+    void getOnboardingFlag("howItWorksDismissed").then((dismissed) => setShow(!dismissed));
+  }, []);
+
+  if (show !== true) return null;
+
+  const steps: Array<{ icon: React.ElementType; title: string; body: string }> = [
+    {
+      icon: ListChecks,
+      title: "1. Define your filters",
+      body: "Plain English: \"Must be remote\", \"Salary ≥ €5k\". Edit anytime.",
+    },
+    {
+      icon: Search,
+      title: "2. Open any LinkedIn job",
+      body: "We read the description while you browse — no extra clicks.",
+    },
+    {
+      icon: CheckCircle2,
+      title: "3. See ✅ / ❌ instantly",
+      body: "Every filter gets a verdict and a quote from the description.",
+    },
+  ];
+
+  return (
+    <section
+      id="how-it-works"
+      className="mx-auto mt-6 max-w-6xl px-6"
+      aria-labelledby="how-it-works-heading"
+    >
+      <div className="relative rounded-xl border bg-card p-5 shadow-sm">
+        <button
+          onClick={async () => {
+            setShow(false);
+            await setOnboardingFlag("howItWorksDismissed", true);
+          }}
+          className="absolute right-3 top-3 -m-1 rounded p-1 text-muted-foreground hover:text-foreground"
+          title="Dismiss"
+          aria-label="Dismiss the how-it-works panel"
+        >
+          <X size={14} />
+        </button>
+        <div className="mb-1 flex items-center gap-2">
+          <HelpCircle size={14} className="text-primary" />
+          <h2 id="how-it-works-heading" className="text-sm font-semibold text-foreground">
+            How canvasjob works
+          </h2>
+        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          A 30-second tour. Dismiss this panel once you've got the idea.
+        </p>
+        <div className="grid gap-4 md:grid-cols-3">
+          {steps.map(({ icon: Icon, title, body }, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Icon size={16} />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{title}</div>
+                <div className="text-xs leading-relaxed text-muted-foreground">{body}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <InlinePreview />
+      </div>
+    </section>
+  );
+}
+
+// Mock evaluation card rendered inside the how-it-works strip so users can
+// see, in concrete terms, what their filters will produce in the side panel
+// before they ever open a real LinkedIn job.
+function InlinePreview() {
+  return (
+    <div className="mt-5 rounded-lg border border-dashed bg-background p-4">
+      <div className="mb-3 text-xs uppercase tracking-wide text-muted-foreground">
+        Preview — what you'll see in the side panel
+      </div>
+      <div className="mb-3">
+        <div className="text-sm font-medium text-foreground">Senior Backend Engineer</div>
+        <div className="text-xs text-muted-foreground">Acme Corp · Remote, EU</div>
+      </div>
+      <ul className="space-y-2">
+        <PreviewRow
+          pass="pass"
+          filter="Must be fully remote"
+          evidence="“100% remote within the EU.”"
+        />
+        <PreviewRow
+          pass="fail"
+          filter="Permanent role (not contract)"
+          evidence="“6-month contract with possible extension.”"
+        />
+        <PreviewRow
+          pass="unknown"
+          filter="Salary mentioned ≥ €5,000/month"
+          evidence="Not mentioned in the description."
+        />
+      </ul>
+    </div>
+  );
+}
+
+function PreviewRow({
+  pass,
+  filter,
+  evidence,
+}: {
+  pass: "pass" | "fail" | "unknown";
+  filter: string;
+  evidence: string;
+}) {
+  const Icon = pass === "pass" ? Check : pass === "fail" ? X : HelpCircle;
+  const tone =
+    pass === "pass"
+      ? "bg-emerald-50 text-emerald-700"
+      : pass === "fail"
+        ? "bg-destructive/10 text-destructive"
+        : "bg-muted text-muted-foreground";
+  return (
+    <li className="flex items-start gap-3">
+      <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${tone}`}>
+        <Icon size={12} />
+      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">{filter}</div>
+        <div className="text-xs italic leading-relaxed text-muted-foreground">{evidence}</div>
+      </div>
+    </li>
   );
 }
 
@@ -663,6 +812,39 @@ function NewProfileButton({
 // Filter editor (right pane)
 // ---------------------------------------------------------------------------
 
+function StarterBanner() {
+  // Hidden by default to avoid a flash on dismissed instances; revealed once
+  // we've confirmed the flag is unset.
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    void getOnboardingFlag("starterBannerDismissed").then((dismissed) => setShow(!dismissed));
+  }, []);
+
+  if (!show) return null;
+  return (
+    <div className="mb-4 flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+      <Lightbulb size={16} className="mt-0.5 shrink-0 text-primary" />
+      <div className="flex-1 text-foreground">
+        <span className="font-medium">These are starter examples.</span>{" "}
+        <span className="text-muted-foreground">
+          Edit, reorder, or delete them — then add your own to make this profile yours.
+        </span>
+      </div>
+      <button
+        onClick={async () => {
+          setShow(false);
+          await setOnboardingFlag("starterBannerDismissed", true);
+        }}
+        className="-m-1 shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+        title="Dismiss"
+        aria-label="Dismiss starter banner"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 function FilterEditor({
   profile,
   mutators,
@@ -684,6 +866,7 @@ function FilterEditor({
   const [localOrder, setLocalOrder] = useState<FilterOut[] | null>(null);
   const [addingFilter, setAddingFilter] = useState(false);
   const display = localOrder ?? filters;
+  const isStarter = profile.name === STARTER_PROFILE_NAME;
 
   useEffect(() => setLocalOrder(null), [profile.filters]);
   useEffect(() => setAddingFilter(false), [profile.id]);
@@ -733,6 +916,8 @@ function FilterEditor({
           {visibleCount} / {MAX_FILTERS_PER_PROFILE} filters
         </span>
       </div>
+
+      {isStarter && <StarterBanner />}
 
       {display.length === 0 && (
         <div className="mb-4 rounded-lg border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
@@ -1019,7 +1204,10 @@ export default function App() {
     <div className="min-h-screen bg-muted/30 text-foreground">
       <Header email={email} />
       {email ? (
-        <ProfilesEditor />
+        <>
+          <HowItWorksStrip />
+          <ProfilesEditor />
+        </>
       ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           <AuthPanel />
