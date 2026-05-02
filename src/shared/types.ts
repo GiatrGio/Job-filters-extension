@@ -3,10 +3,19 @@
 
 export type EvaluationPass = boolean | null;
 
+// Two filter shapes the backend distinguishes (see migration 0006). The
+// extension uses this on the way out (passing kind into createFilter)
+// and on the way in (icon + copy in the side panel result row).
+export type FilterKind = "criterion" | "question";
+
 export interface EvaluationResult {
   filter: string;
   pass: EvaluationPass;
   evidence: string;
+  // Optional for backward compatibility with cached results created
+  // before the backend started populating it. Treat missing as
+  // "criterion" — that's the historical default.
+  kind?: FilterKind;
 }
 
 export interface UsageOut {
@@ -48,6 +57,7 @@ export interface FilterOut {
   text: string;
   position: number;
   enabled: boolean;
+  kind: FilterKind;
   created_at: string;
   updated_at: string;
 }
@@ -56,12 +66,14 @@ export interface FilterCreate {
   text: string;
   position?: number;
   enabled?: boolean;
+  kind?: FilterKind;
 }
 
 export interface FilterUpdate {
   text?: string;
   position?: number;
   enabled?: boolean;
+  kind?: FilterKind;
 }
 
 export interface FilterProfileOut {
@@ -109,6 +121,9 @@ export interface FilterValidationResponse {
   verdict: FilterValidationVerdict;
   reason: string;
   suggestion: string | null;
+  // Always populated, even on vague/rejected verdicts, so a save-anyway
+  // flow can persist the right kind without a second classification.
+  kind: FilterKind;
   usage: UsageOut;
 }
 

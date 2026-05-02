@@ -40,6 +40,7 @@ import {
   MAX_PROFILES_PER_USER,
   PROFILE_NAME_MAX,
   STARTER_PROFILE_NAME,
+  type FilterKind,
   type FilterOut,
   type FilterProfileOut,
   type FilterProfileWithFilters,
@@ -898,9 +899,15 @@ function FilterEditor({
     setAddingFilter(true);
   }
 
-  async function createDraftFilter(text: string) {
+  async function createDraftFilter(text: string, kind: FilterKind | undefined) {
     try {
-      const created = await api.createFilter(profile.id, { text });
+      const created = await api.createFilter(profile.id, {
+        text,
+        // Omit when undefined so the backend uses its own default
+        // (criterion). Sending kind:undefined would also work but is
+        // less clear in the wire payload.
+        ...(kind ? { kind } : {}),
+      });
       setAddingFilter(false);
       mutators.addFilter(profile.id, created);
     } catch (err) {
@@ -980,7 +987,8 @@ function FilterEditor({
 // `validating` shows a spinner while the LLM call is in flight; `verdict`
 // surfaces the LLM's bucket so the user can either save anyway (vague),
 // edit (rejected), or get an actionable suggestion. `quota` and `error`
-// cover the not-success paths that aren't a verdict.
+// cover the not-success paths that aren't a verdict. Successful or
+// save-anyway paths read `kind` from `lastValidated`, see below.
 type DraftValidationState =
   | { kind: "idle" }
   | { kind: "validating" }
@@ -997,12 +1005,19 @@ function NewFilterDraft({
   onConfirm,
   onCancel,
 }: {
-  onConfirm: (text: string) => Promise<void>;
+  // Carries the validated FilterKind so the parent can store it on the
+  // new filter row. Undefined when validation didn't complete (quota /
+  // error / save-anyway-without-LLM); the backend defaults to criterion.
+  onConfirm: (text: string, kind: FilterKind | undefined) => Promise<void>;
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [validation, setValidation] = useState<DraftValidationState>({ kind: "idle" });
+  // Latest LLM-classified kind for the current text. Cleared whenever
+  // the text changes (so a stale kind never gets persisted alongside
+  // edited text). Read by every save path that goes through the LLM.
+  const [lastValidatedKind, setLastValidatedKind] = useState<FilterKind | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -1022,6 +1037,7 @@ function NewFilterDraft({
   // re-runs.
   function onTextChange(next: string) {
     setText(next);
+    if (lastValidatedKind !== null) setLastValidatedKind(null);
     if (validation.kind !== "idle" && validation.kind !== "validating") {
       setValidation({ kind: "idle" });
     }
@@ -1052,11 +1068,13 @@ function NewFilterDraft({
       return;
     }
 
+    setLastValidatedKind(result.kind);
+
     if (result.verdict === "good") {
       // Skip the panel entirely — the user's intent was Save and the
       // verdict was good, so just save.
       try {
-        await onConfirm(trimmed);
+        await onConfirm(trimmed, result.kind);
       } catch {
         // onConfirm already surfaces failures via the parent's onError;
         // fall through and let the user retry.
@@ -1080,7 +1098,10 @@ function NewFilterDraft({
     if (!trimmed || busy) return;
     setBusy(true);
     try {
-      await onConfirm(trimmed);
+      // lastValidatedKind is set when this is reached from a vague
+      // verdict (we have a fresh classification). On the quota / error
+      // paths it's null and we let the backend default to criterion.
+      await onConfirm(trimmed, lastValidatedKind ?? undefined);
     } catch {
       setBusy(false);
     }
