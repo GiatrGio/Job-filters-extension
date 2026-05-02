@@ -22,7 +22,16 @@ export interface UsageOut {
   used: number;
   limit: number;
   period: string; // 'YYYY-MM'
+  // Server-driven ratio at which the side panel shows the soft upgrade
+  // banner. Optional for backward compat with cached responses captured
+  // before the field existed; callers should fall back to
+  // DEFAULT_WARNING_THRESHOLD.
+  warning_threshold?: number;
 }
+
+// Fallback used when an older cached response lacks `warning_threshold`.
+// Must match the backend default in app/config.py.
+export const DEFAULT_WARNING_THRESHOLD = 0.8;
 
 export interface EvaluateRequest {
   linkedin_job_id: string;

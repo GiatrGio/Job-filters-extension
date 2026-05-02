@@ -7,6 +7,7 @@ import type {
   StoredEvaluation,
   UsageOut,
 } from "@/shared/types";
+import { DEFAULT_WARNING_THRESHOLD } from "@/shared/types";
 import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation, getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
@@ -180,12 +181,15 @@ export default function App() {
 
     if (status.kind === "error") {
       const quota = status.status === 402;
+      const title = quota
+        ? "You've used your free evaluations for this month."
+        : "Evaluation failed.";
       return (
         <div className="p-4 text-sm">
           <p className="font-medium text-destructive">
-            {quota ? "Monthly quota reached." : "Evaluation failed."}
+            {title}
           </p>
-          <p className="mt-1 text-muted-foreground">{status.message}</p>
+          {!quota && <p className="mt-1 text-muted-foreground">{status.message}</p>}
           {quota && me?.plan === "free" && (
             <button
               onClick={openPricing}
@@ -244,7 +248,9 @@ export default function App() {
 
   const isFreePlan = me?.plan === "free";
   const usageRatio = usage && usage.limit > 0 ? usage.used / usage.limit : 0;
-  const showSoftUpgrade = isFreePlan && usage !== null && usageRatio >= 0.8 && usageRatio < 1;
+  const warningThreshold = usage?.warning_threshold ?? DEFAULT_WARNING_THRESHOLD;
+  const showSoftUpgrade =
+    isFreePlan && usage !== null && usageRatio >= warningThreshold && usageRatio < 1;
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
