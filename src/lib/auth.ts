@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type Provider, type SupabaseClient } from "@supabase/supabase-js";
 import { ENV } from "./env";
 
 // Custom storage adapter so Supabase persists its session in chrome.storage
@@ -36,6 +36,44 @@ export function getSupabase(): SupabaseClient {
 export async function getAccessToken(): Promise<string | null> {
   const { data } = await getSupabase().auth.getSession();
   return data.session?.access_token ?? null;
+}
+
+export async function signInWithOAuth(provider: Provider): Promise<void> {
+  const supabase = getSupabase();
+  const redirectTo = chrome.identity.getRedirectURL();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo,
+      skipBrowserRedirect: true,
+    },
+  });
+
+  if (error) throw error;
+  if (!data.url) throw new Error("Could not start the OAuth flow.");
+
+  const responseUrl = await chrome.identity.launchWebAuthFlow({
+    url: data.url,
+    interactive: true,
+  });
+
+  if (!responseUrl) {
+    throw new Error("OAuth sign-in was cancelled.");
+  }
+
+  const callbackUrl = new URL(responseUrl);
+  const oauthError = callbackUrl.searchParams.get("error_description") ?? callbackUrl.searchParams.get("error");
+  if (oauthError) {
+    throw new Error(oauthError);
+  }
+
+  const code = callbackUrl.searchParams.get("code");
+  if (!code) {
+    throw new Error("OAuth provider did not return an authorization code.");
+  }
+
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+  if (exchangeError) throw exchangeError;
 }
 
 export async function signOut(): Promise<void> {

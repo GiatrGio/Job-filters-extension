@@ -16,8 +16,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   AlertTriangle,
+  BriefcaseBusiness,
   Check,
   CheckCircle2,
+  CircleUser,
   GripVertical,
   HelpCircle,
   Lightbulb,
@@ -30,8 +32,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { Provider } from "@supabase/supabase-js";
 import { api, ApiError } from "@/lib/api";
-import { getSupabase, signOut } from "@/lib/auth";
+import { getSupabase, signInWithOAuth, signOut } from "@/lib/auth";
 import { openPricing } from "@/lib/links";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import {
@@ -74,7 +77,9 @@ function AuthPanel() {
   const [view, setView] = useState<AuthView>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [oauthProvider, setOauthProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -89,6 +94,9 @@ function AuthPanel() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
+        if (password !== confirmPassword) {
+          throw new Error("Passwords do not match.");
+        }
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         setInfo("Check your inbox to confirm your email, then sign in.");
@@ -100,11 +108,49 @@ function AuthPanel() {
     }
   }
 
+  async function startOAuth(provider: Provider) {
+    setOauthProvider(provider);
+    setError(null);
+    setInfo(null);
+    try {
+      await signInWithOAuth(provider);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOauthProvider(null);
+    }
+  }
+
   return (
     <div className="mx-auto mt-10 max-w-sm rounded-lg border bg-card p-6 text-card-foreground shadow-sm">
       <h2 className="mb-4 text-lg font-semibold tracking-tight">
         {view === "signin" ? "Sign in" : "Create account"}
       </h2>
+      <div className="space-y-2">
+        <button
+          type="button"
+          disabled={busy || oauthProvider !== null}
+          onClick={() => startOAuth("google")}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60"
+        >
+          <CircleUser className="h-4 w-4" />
+          {oauthProvider === "google" ? "Opening Google..." : "Continue with Google"}
+        </button>
+        <button
+          type="button"
+          disabled={busy || oauthProvider !== null}
+          onClick={() => startOAuth("linkedin_oidc")}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60"
+        >
+          <BriefcaseBusiness className="h-4 w-4" />
+          {oauthProvider === "linkedin_oidc" ? "Opening LinkedIn..." : "Continue with LinkedIn"}
+        </button>
+      </div>
+      <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        <span>or</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
       <form onSubmit={submit} className="space-y-3">
         <input
           type="email"
@@ -118,13 +164,25 @@ function AuthPanel() {
         <input
           type="password"
           required
-          minLength={6}
+          minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
           autoComplete={view === "signin" ? "current-password" : "new-password"}
         />
+        {view === "signup" && (
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm password"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+            autoComplete="new-password"
+          />
+        )}
         <button
           type="submit"
           disabled={busy}

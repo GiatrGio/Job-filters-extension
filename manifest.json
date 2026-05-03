@@ -3,7 +3,7 @@
   "name": "canvasjob",
   "description": "Evaluate LinkedIn job postings against your custom, free-text filters.",
   "version": "0.1.0",
-  "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs"],
+  "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs", "identity"],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://*.supabase.co/*",
