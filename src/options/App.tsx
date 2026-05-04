@@ -136,15 +136,15 @@ function AuthPanel() {
           <CircleUser className="h-4 w-4" />
           {oauthProvider === "google" ? "Opening Google..." : "Continue with Google"}
         </button>
-        <button
-          type="button"
-          disabled={busy || oauthProvider !== null}
-          onClick={() => startOAuth("linkedin_oidc")}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60"
-        >
-          <BriefcaseBusiness className="h-4 w-4" />
-          {oauthProvider === "linkedin_oidc" ? "Opening LinkedIn..." : "Continue with LinkedIn"}
-        </button>
+        {/*<button*/}
+        {/*  type="button"*/}
+        {/*  disabled={busy || oauthProvider !== null}*/}
+        {/*  onClick={() => startOAuth("linkedin_oidc")}*/}
+        {/*  className="flex w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-60"*/}
+        {/*>*/}
+        {/*  <BriefcaseBusiness className="h-4 w-4" />*/}
+        {/*  {oauthProvider === "linkedin_oidc" ? "Opening LinkedIn..." : "Continue with LinkedIn"}*/}
+        {/*</button>*/}
       </div>
       <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
         <div className="h-px flex-1 bg-border" />
