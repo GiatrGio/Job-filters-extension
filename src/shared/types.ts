@@ -192,6 +192,7 @@ export type ExtensionMessage =
   | { type: "EVALUATION_ERROR"; jobId: string; error: string; status?: number }
   | { type: "RESCAN" }
   | { type: "REQUEST_RESCAN" }
+  | { type: "SIDEPANEL_HEARTBEAT" }
   | { type: "SIDEPANEL_READY" }
   | { type: "GET_LAST_RESULT" };
 

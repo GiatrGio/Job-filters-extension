@@ -14,35 +14,13 @@ import type { ExtensionMessage, ScrapedJob } from "@/shared/types";
 
 const DEBOUNCE_MS = 1500;
 
-let lastHandledJobId: string | null = null;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+type CanvasjobContentState = {
+  rescan: () => void;
+};
 
-function send(message: ExtensionMessage): void {
-  chrome.runtime.sendMessage(message).catch(() => {
-    // Background may be asleep; message will wake it up. Ignoring errors
-    // here is safe — the worst case is the side panel shows a stale result.
-  });
-}
-
-async function handlePossibleJobView(): Promise<void> {
-  const jobId = getJobIdFromUrl();
-  if (!jobId) return;
-  if (jobId === lastHandledJobId) return;
-
-  const job: ScrapedJob | null = await waitForJobContent();
-  if (!job) return;
-
-  lastHandledJobId = job.linkedin_job_id;
-  send({ type: "JOB_SCRAPED", job });
-}
-
-function scheduleHandle(): void {
-  if (pendingTimer) clearTimeout(pendingTimer);
-  pendingTimer = setTimeout(() => {
-    pendingTimer = null;
-    void handlePossibleJobView();
-  }, DEBOUNCE_MS);
-}
+type CanvasjobWindow = typeof window & {
+  __canvasjobContentScript?: CanvasjobContentState;
+};
 
 // --- URL change detection ----------------------------------------------------
 // LinkedIn is an SPA, so we can't rely on page loads. Listen for:
@@ -52,40 +30,96 @@ function scheduleHandle(): void {
 //      without changing the URL.
 // -----------------------------------------------------------------------------
 
-(function hookHistory() {
-  const fire = () => window.dispatchEvent(new Event("locationchange"));
-  const origPush = history.pushState;
-  const origReplace = history.replaceState;
-  history.pushState = function (...args) {
-    const r = origPush.apply(this, args);
-    fire();
-    return r;
-  };
-  history.replaceState = function (...args) {
-    const r = origReplace.apply(this, args);
-    fire();
-    return r;
-  };
-  window.addEventListener("popstate", fire);
-})();
+const canvasWindow = window as CanvasjobWindow;
+if (canvasWindow.__canvasjobContentScript) {
+  canvasWindow.__canvasjobContentScript.rescan();
+} else {
+  canvasWindow.__canvasjobContentScript = install();
+}
 
-window.addEventListener("locationchange", scheduleHandle);
+function install(): CanvasjobContentState {
+  let lastHandledJobId: string | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
-const observer = new MutationObserver(() => {
-  const currentId = getJobIdFromUrl();
-  if (currentId && currentId !== lastHandledJobId) scheduleHandle();
-});
-observer.observe(document.body, { childList: true, subtree: true });
+  function send(message: ExtensionMessage): void {
+    try {
+      chrome.runtime.sendMessage(message).catch((err) => {
+        // This commonly happens after reloading the extension while LinkedIn tabs
+        // stay open. The background worker will inject a fresh content script on
+        // the next side-panel rescan.
+        // eslint-disable-next-line no-console
+        console.debug("[canvasjob] Could not send message from content script", err);
+      });
+    } catch (err) {
+      // This commonly happens after reloading the extension while LinkedIn tabs
+      // stay open. The background worker will inject a fresh content script on
+      // the next side-panel rescan.
+      // eslint-disable-next-line no-console
+      console.debug("[canvasjob] Could not send message from content script", err);
+    }
+  }
 
-// The background worker asks for a re-scan when the side panel opens, so the
-// user sees a result for the job they're already viewing.
-chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
-  if (message.type === "RESCAN") {
+  async function handlePossibleJobView(): Promise<void> {
+    const jobId = getJobIdFromUrl();
+    if (!jobId) return;
+    if (jobId === lastHandledJobId) return;
+
+    const job: ScrapedJob | null = await waitForJobContent();
+    if (!job) return;
+
+    lastHandledJobId = job.linkedin_job_id;
+    send({ type: "JOB_SCRAPED", job });
+  }
+
+  function scheduleHandle(): void {
+    if (pendingTimer) clearTimeout(pendingTimer);
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null;
+      void handlePossibleJobView();
+    }, DEBOUNCE_MS);
+  }
+
+  function rescan(): void {
     lastHandledJobId = null;
     scheduleHandle();
   }
-  return false;
-});
 
-// Handle the initial load.
-scheduleHandle();
+  (function hookHistory() {
+    const fire = () => window.dispatchEvent(new Event("locationchange"));
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    history.pushState = function (...args) {
+      const r = origPush.apply(this, args);
+      fire();
+      return r;
+    };
+    history.replaceState = function (...args) {
+      const r = origReplace.apply(this, args);
+      fire();
+      return r;
+    };
+    window.addEventListener("popstate", fire);
+  })();
+
+  window.addEventListener("locationchange", scheduleHandle);
+
+  const observer = new MutationObserver(() => {
+    const currentId = getJobIdFromUrl();
+    if (currentId && currentId !== lastHandledJobId) scheduleHandle();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // The background worker asks for a re-scan when the side panel opens, so the
+  // user sees a result for the job they're already viewing.
+  chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
+    if (message.type === "RESCAN") {
+      rescan();
+    }
+    return false;
+  });
+
+  // Handle the initial load.
+  scheduleHandle();
+
+  return { rescan };
+}

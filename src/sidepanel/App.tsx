@@ -15,6 +15,10 @@ import { openHowItWorks, openPricing } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
 import { TrackJobButton } from "./components/TrackJobButton";
 
+const SIDEPANEL_PORT_NAME = "sidepanel";
+const SIDEPANEL_HEARTBEAT_MS = 20_000;
+const SIDEPANEL_RECONNECT_MS = 1_000;
+
 type Status =
   | { kind: "idle" }
   | { kind: "loading"; jobId: string }
@@ -53,10 +57,54 @@ export default function App() {
   }
 
   useEffect(() => {
-    // Long-lived port so the background worker knows the panel is open.
-    // When this port disconnects (panel closed), the background stops
-    // evaluating jobs — which is the whole point: no work the user can't see.
-    const port = chrome.runtime.connect({ name: "sidepanel" });
+    // Long-lived port so the background worker knows the panel is open. MV3
+    // workers can still be suspended while the side panel stays visible, so the
+    // panel reconnects and sends a small heartbeat instead of assuming the
+    // first port will live for the whole browser session.
+    let stopped = false;
+    let port: chrome.runtime.Port | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function clearHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+
+    function scheduleReconnect() {
+      if (stopped || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectPort();
+      }, SIDEPANEL_RECONNECT_MS);
+    }
+
+    function sendHeartbeat() {
+      try {
+        port?.postMessage({ type: "SIDEPANEL_HEARTBEAT" } satisfies ExtensionMessage);
+      } catch {
+        clearHeartbeat();
+        scheduleReconnect();
+      }
+    }
+
+    function connectPort() {
+      if (stopped) return;
+      try {
+        port = chrome.runtime.connect({ name: SIDEPANEL_PORT_NAME });
+        port.onDisconnect.addListener(() => {
+          port = null;
+          clearHeartbeat();
+          scheduleReconnect();
+        });
+        sendHeartbeat();
+        heartbeatTimer = setInterval(sendHeartbeat, SIDEPANEL_HEARTBEAT_MS);
+      } catch {
+        scheduleReconnect();
+      }
+    }
+
+    connectPort();
 
     void (async () => {
       const [last, token, coachDismissed] = await Promise.all([
@@ -98,8 +146,15 @@ export default function App() {
     };
     chrome.runtime.onMessage.addListener(onMessage);
     return () => {
+      stopped = true;
+      clearHeartbeat();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       chrome.runtime.onMessage.removeListener(onMessage);
-      port.disconnect();
+      try {
+        port?.disconnect();
+      } catch {
+        // The worker may already be gone.
+      }
     };
   }, []);
 

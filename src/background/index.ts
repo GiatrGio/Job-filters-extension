@@ -53,14 +53,58 @@ async function evaluateJob(job: ScrapedJob): Promise<void> {
   }
 }
 
+async function handleScrapedJob(job: ScrapedJob): Promise<void> {
+  if (!isSidepanelOpen()) {
+    return;
+  }
+  await forwardToSidepanel({ type: "JOB_SCRAPED", job });
+  await evaluateJob(job);
+}
+
 // Ask any active LinkedIn tabs to re-emit their current job. Used when the
 // side panel just opened, so the user sees a result for the job they're
 // already viewing instead of having to navigate away and back.
 async function requestRescanFromLinkedInTabs(): Promise<void> {
-  const tabs = await chrome.tabs.query({ url: "https://www.linkedin.com/*" });
+  const tabs = await chrome.tabs.query({ url: "https://www.linkedin.com/jobs/*" });
   for (const tab of tabs) {
     if (tab.id === undefined) continue;
-    chrome.tabs.sendMessage(tab.id, { type: "RESCAN" } satisfies ExtensionMessage).catch(() => {});
+    void rescanLinkedInTab(tab.id);
+  }
+}
+
+function getContentScriptFiles(): string[] {
+  const manifest = chrome.runtime.getManifest();
+  return (
+    manifest.content_scripts
+      ?.filter((script) => script.matches?.some((match) => match.includes("linkedin.com/jobs")))
+      .flatMap((script) => script.js ?? []) ?? []
+  );
+}
+
+async function injectContentScript(tabId: number): Promise<void> {
+  const files = getContentScriptFiles();
+  if (files.length === 0) return;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files,
+  });
+}
+
+async function rescanLinkedInTab(tabId: number): Promise<void> {
+  const rescanMessage = { type: "RESCAN" } satisfies ExtensionMessage;
+  try {
+    await chrome.tabs.sendMessage(tabId, rescanMessage);
+  } catch {
+    // Existing LinkedIn tabs do not always receive the new content script after
+    // an extension reload. Inject it on demand, then ask it to emit the current
+    // job again.
+    try {
+      await injectContentScript(tabId);
+      await chrome.tabs.sendMessage(tabId, rescanMessage);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.debug("[canvasjob] Could not rescan LinkedIn tab", tabId, err);
+    }
   }
 }
 
@@ -75,8 +119,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, _sendResponse) => {
   if (message.type === "JOB_SCRAPED") {
-    if (!isSidepanelOpen()) return false;
-    void evaluateJob(message.job);
+    void handleScrapedJob(message.job);
     return false;
   }
   if (message.type === "REQUEST_EVALUATION") {
