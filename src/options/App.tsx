@@ -16,7 +16,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   AlertTriangle,
-  BriefcaseBusiness,
   Check,
   CheckCircle2,
   CircleUser,

@@ -28,6 +28,7 @@ export function getSupabase(): SupabaseClient {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      flowType: "pkce",
     },
   });
   return _client;
@@ -62,18 +63,35 @@ export async function signInWithOAuth(provider: Provider): Promise<void> {
   }
 
   const callbackUrl = new URL(responseUrl);
-  const oauthError = callbackUrl.searchParams.get("error_description") ?? callbackUrl.searchParams.get("error");
+  const hashParams = new URLSearchParams(callbackUrl.hash.replace(/^#/, ""));
+  const oauthError =
+    callbackUrl.searchParams.get("error_description") ??
+    callbackUrl.searchParams.get("error") ??
+    hashParams.get("error_description") ??
+    hashParams.get("error");
   if (oauthError) {
     throw new Error(oauthError);
   }
 
-  const code = callbackUrl.searchParams.get("code");
-  if (!code) {
-    throw new Error("OAuth provider did not return an authorization code.");
+  const code = callbackUrl.searchParams.get("code") ?? hashParams.get("code");
+  if (code) {
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    if (exchangeError) throw exchangeError;
+    return;
   }
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-  if (exchangeError) throw exchangeError;
+  const accessToken = hashParams.get("access_token");
+  const refreshToken = hashParams.get("refresh_token");
+  if (accessToken && refreshToken) {
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (sessionError) throw sessionError;
+    return;
+  }
+
+  throw new Error("OAuth provider did not return a usable session.");
 }
 
 export async function signOut(): Promise<void> {
