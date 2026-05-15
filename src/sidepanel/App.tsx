@@ -437,7 +437,7 @@ function SignedOutExplainer({ onOpenOptions }: { onOpenOptions: () => void }) {
     {
       icon: CheckCircle2,
       title: "See ✅ / ❌ instantly",
-      body: "Each filter gets a verdict and a quote from the description.",
+      body: "Each filter gets a verdict with evidence in your language.",
     },
   ];
   return (
