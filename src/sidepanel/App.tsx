@@ -12,6 +12,7 @@ import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation, getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
 import { openHowItWorks, openPricing } from "@/lib/links";
+import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import { ResultRow } from "./components/ResultRow";
 import { TrackJobButton } from "./components/TrackJobButton";
 
@@ -310,7 +311,9 @@ export default function App() {
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex min-h-12 items-center gap-2 border-b px-3 py-2">
-        <h1 className="shrink-0 text-sm font-semibold tracking-tight">canvasjob</h1>
+        <h1 className="shrink-0">
+          <CanvasjobLogo markClassName="h-6 w-6" textClassName="text-sm" />
+        </h1>
         <button
           onClick={openHowItWorks}
           className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

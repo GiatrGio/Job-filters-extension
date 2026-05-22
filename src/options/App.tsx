@@ -36,6 +36,7 @@ import { api, ApiError } from "@/lib/api";
 import { getSupabase, signInWithOAuth, signOut } from "@/lib/auth";
 import { openPricing } from "@/lib/links";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
+import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import {
   FILTER_TEXT_MAX,
   MAX_FILTERS_PER_PROFILE,
@@ -216,7 +217,9 @@ function Header({ email }: { email: string | null }) {
   return (
     <header className="border-b bg-background">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-6">
-        <h1 className="text-xl font-semibold tracking-tight">canvasjob</h1>
+        <h1>
+          <CanvasjobLogo markClassName="h-8 w-8" textClassName="text-xl" />
+        </h1>
         {email && (
           <div className="flex items-center gap-6">
             <div className="text-right text-sm">
