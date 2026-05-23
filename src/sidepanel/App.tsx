@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, HelpCircle, ListChecks, RefreshCw, Search } from "lucide-react";
+import { CheckCircle2, CircleArrowUp, HelpCircle, ListChecks, RefreshCw, Search } from "lucide-react";
 import type {
   ExtensionMessage,
   FilterProfileWithFilters,
@@ -12,9 +12,8 @@ import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation, getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
 import { openHowItWorks, openPricing } from "@/lib/links";
-import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import { ResultRow } from "./components/ResultRow";
-import { TrackJobButton } from "./components/TrackJobButton";
+import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
 const SIDEPANEL_HEARTBEAT_MS = 20_000;
@@ -41,6 +40,7 @@ export default function App() {
   // during the next evaluation's loading state, instead of snapping back
   // to /me's session-start snapshot.
   const [usage, setUsage] = useState<UsageOut | null>(null);
+  const [trackedJobLimit, setTrackedJobLimit] = useState<TrackedJobLimitInfo | null>(null);
   // Coach-marks lifecycle: null = unknown (still loading the persisted
   // dismissal flag), false = already dismissed (never show again), true =
   // eligible — shown whenever there's a ready evaluation.
@@ -133,8 +133,10 @@ export default function App() {
 
     const onMessage = (msg: ExtensionMessage) => {
       if (msg.type === "JOB_SCRAPED") {
+        setTrackedJobLimit(null);
         setStatus({ kind: "loading", jobId: msg.job.linkedin_job_id });
       } else if (msg.type === "EVALUATION_READY") {
+        setTrackedJobLimit(null);
         setStatus({
           kind: "ready",
           evaluation: { job: msg.job, response: msg.response, storedAt: Date.now() },
@@ -217,6 +219,15 @@ export default function App() {
   }
 
   const evalView = (() => {
+    if (trackedJobLimit?.plan === "free") {
+      return (
+        <TrackedJobLimitPage
+          limit={trackedJobLimit.limit}
+          onBack={() => setTrackedJobLimit(null)}
+        />
+      );
+    }
+
     if (signedIn === false) {
       return <SignedOutExplainer onOpenOptions={openOptions} />;
     }
@@ -268,7 +279,7 @@ export default function App() {
               {cached ? "Cached" : "Fresh"} evaluation
             </div>
             <div className="relative">
-              <TrackJobButton job={job} />
+              <TrackJobButton job={job} onLimitExceeded={setTrackedJobLimit} />
               {coachMarksVisible && (
                 <CoachBubble
                   title="Save jobs you like"
@@ -310,58 +321,9 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <header className="flex min-h-12 items-center gap-2 border-b px-3 py-2">
-        <h1 className="shrink-0">
-          <CanvasjobLogo markClassName="h-6 w-6" textClassName="text-sm" />
-        </h1>
-        <button
-          onClick={openHowItWorks}
-          className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title="How it works"
-          aria-label="How it works"
-        >
-          <HelpCircle size={14} />
-        </button>
-        {signedIn && (
-          <button
-            onClick={refreshFilters}
-            disabled={refreshingFilters}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-            title="Refresh filters"
-            aria-label="Refresh filters"
-          >
-            <RefreshCw size={14} className={refreshingFilters ? "animate-spin" : ""} />
-          </button>
-        )}
-        {signedIn && profiles.length > 0 && (
-          <div className="relative">
-            <select
-              value={activeProfileId ?? ""}
-              onChange={(e) => onChangeProfile(e.target.value)}
-              disabled={switchingProfile}
-              className="min-w-0 max-w-[9rem] truncate rounded-md border border-input bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
-              title="Active profile"
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {coachMarksVisible && (
-              <CoachBubble
-                title="Multiple job searches?"
-                body="Switch your active filter profile here — each profile has its own set of filters."
-                onDismiss={dismissCoachMarks}
-              />
-            )}
-          </div>
-        )}
-      </header>
-
       <main className="flex-1 overflow-y-auto">{evalView}</main>
 
-      <footer className="border-t px-4 py-2 text-xs text-muted-foreground">
+      <footer className="border-t px-3 py-2 text-xs text-muted-foreground">
         {showSoftUpgrade && (
           <button
             onClick={openPricing}
@@ -381,7 +343,7 @@ export default function App() {
                 {usage.used} / {usage.limit} this month
               </button>
             ) : (
-              <span>{usage.used} / {usage.limit} this month</span>
+              <span>Pro plan · Unlimited evaluations</span>
             )
           ) : (
             <span>Usage will appear after your first evaluation</span>
@@ -390,27 +352,121 @@ export default function App() {
             Settings
           </button>
         </div>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={openHowItWorks}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="How it works"
+            aria-label="How it works"
+          >
+            <HelpCircle size={14} />
+          </button>
+          {signedIn && (
+            <button
+              onClick={refreshFilters}
+              disabled={refreshingFilters}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+              title="Refresh filters"
+              aria-label="Refresh filters"
+            >
+              <RefreshCw size={14} className={refreshingFilters ? "animate-spin" : ""} />
+            </button>
+          )}
+          {signedIn && profiles.length > 0 && (
+            <div className="relative min-w-0 flex-1">
+              <select
+                value={activeProfileId ?? ""}
+                onChange={(e) => onChangeProfile(e.target.value)}
+                disabled={switchingProfile}
+                className="h-7 w-full truncate rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
+                title="Active profile"
+              >
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              {coachMarksVisible && (
+                <CoachBubble
+                  title="Multiple job searches?"
+                  body="Switch your active filter profile here — each profile has its own set of filters."
+                  onDismiss={dismissCoachMarks}
+                  placement="above"
+                />
+              )}
+            </div>
+          )}
+        </div>
       </footer>
     </div>
   );
 }
 
+function TrackedJobLimitPage({
+  limit,
+  onBack,
+}: {
+  limit?: number;
+  onBack: () => void;
+}) {
+  const displayedLimit = limit ?? 5;
+  return (
+    <div className="flex min-h-full flex-col justify-center p-4 text-sm">
+      <div className="mx-auto w-full max-w-sm rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <CircleArrowUp size={20} aria-hidden="true" />
+        </div>
+        <h2 className="text-base font-semibold text-foreground">
+          You&apos;ve reached the Free plan tracking limit
+        </h2>
+        <p className="mt-2 leading-relaxed text-muted-foreground">
+          Free includes {displayedLimit} tracked jobs at once. Remove a job from
+          your tracker, or upgrade to Pro for unlimited tracked jobs and evaluations.
+        </p>
+        <div className="mt-4 space-y-2">
+          <button
+            onClick={openPricing}
+            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Upgrade to Pro
+          </button>
+          <button
+            onClick={onBack}
+            className="w-full rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Back to job
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // One-time spotlight tooltip rendered next to a UI control (profile selector,
-// Track button) on the user's first successful evaluation. The bubble below
-// the control plus a small arrow on top is enough to draw the eye without
-// needing a portal/overlay layer.
+// Track button) on the user's first successful evaluation.
 function CoachBubble({
   title,
   body,
   onDismiss,
+  placement = "below",
 }: {
   title: string;
   body: string;
   onDismiss: () => void;
+  placement?: "above" | "below";
 }) {
+  const positionClass = placement === "above" ? "bottom-full mb-2" : "top-full mt-2";
+  const arrowClass =
+    placement === "above"
+      ? "-bottom-1.5 right-3 border-b border-r"
+      : "-top-1.5 right-3 border-l border-t";
+
   return (
-    <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-primary/30 bg-card p-3 text-card-foreground shadow-lg">
-      <div className="absolute -top-1.5 right-3 h-3 w-3 rotate-45 border-l border-t border-primary/30 bg-card" />
+    <div
+      className={`absolute right-0 z-20 w-64 rounded-lg border border-primary/30 bg-card p-3 text-card-foreground shadow-lg ${positionClass}`}
+    >
+      <div className={`absolute h-3 w-3 rotate-45 border-primary/30 bg-card ${arrowClass}`} />
       <div className="text-sm font-medium text-foreground">{title}</div>
       <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</div>
       <div className="mt-2 flex justify-end">

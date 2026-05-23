@@ -4,6 +4,11 @@ import { api, ApiError } from "@/lib/api";
 import { openDashboardBoard } from "@/lib/links";
 import type { Application, ScrapedJob } from "@/shared/types";
 
+export type TrackedJobLimitInfo = {
+  plan: string;
+  limit?: number;
+};
+
 /**
  * "Track this job" button — shown in the side-panel header next to the job
  * title. Three states:
@@ -14,7 +19,13 @@ import type { Application, ScrapedJob } from "@/shared/types";
  * On mount and on every job change we call /applications/by-job/<source>/<id>
  * to decide which state to render. 404 means not yet tracked.
  */
-export function TrackJobButton({ job }: { job: ScrapedJob }) {
+export function TrackJobButton({
+  job,
+  onLimitExceeded,
+}: {
+  job: ScrapedJob;
+  onLimitExceeded: (info: TrackedJobLimitInfo) => void;
+}) {
   const [tracked, setTracked] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,6 +70,11 @@ export function TrackJobButton({ job }: { job: ScrapedJob }) {
       });
       setTracked(created);
     } catch (err) {
+      const limitInfo = trackedJobLimitInfo(err);
+      if (limitInfo?.plan === "free") {
+        onLimitExceeded(limitInfo);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : String(err));
     } finally {
       setSaving(false);
@@ -100,4 +116,27 @@ export function TrackJobButton({ job }: { job: ScrapedJob }) {
       {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   );
+}
+
+function trackedJobLimitInfo(err: unknown): TrackedJobLimitInfo | null {
+  if (!(err instanceof ApiError) || err.status !== 402) return null;
+  const body = err.body as { detail?: unknown; error?: unknown } | null | undefined;
+  const detail = body?.detail as
+    | { error?: unknown; plan?: unknown; limit?: unknown }
+    | string
+    | null
+    | undefined;
+
+  if (typeof detail === "object" && detail?.error === "tracked_job_limit_exceeded") {
+    return {
+      plan: typeof detail.plan === "string" ? detail.plan : "free",
+      limit: typeof detail.limit === "number" ? detail.limit : undefined,
+    };
+  }
+
+  if (body?.error === "tracked_job_limit_exceeded" || detail === "tracked_job_limit_exceeded") {
+    return { plan: "free" };
+  }
+
+  return null;
 }

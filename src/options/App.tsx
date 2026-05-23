@@ -225,10 +225,7 @@ function Header({ email }: { email: string | null }) {
             <div className="text-right text-sm">
               <div className="font-medium text-foreground">{email}</div>
               <div className="mt-0.5 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-                <span>
-                  Plan: {me?.plan ?? "…"}
-                  {me ? ` · ${me.usage.used} / ${me.usage.limit} this month` : ""}
-                </span>
+                <span>{formatPlanLine(me)}</span>
                 {me?.plan === "free" && (
                   <button
                     onClick={openPricing}
@@ -251,6 +248,12 @@ function Header({ email }: { email: string | null }) {
       </div>
     </header>
   );
+}
+
+function formatPlanLine(me: MeResponse | null): string {
+  if (!me) return "Plan: …";
+  if (me.plan === "pro") return "Plan: pro · Unlimited evaluations";
+  return `Plan: ${me.plan} · ${me.usage.used} / ${me.usage.limit} this month`;
 }
 
 // ---------------------------------------------------------------------------

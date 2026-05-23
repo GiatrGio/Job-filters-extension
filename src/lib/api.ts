@@ -20,9 +20,12 @@ import type {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  body: unknown;
+
+  constructor(status: number, message: string, body?: unknown) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -45,19 +48,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     // because the stream is consumed on the first call even when parsing
     // fails.
     const raw = await res.text();
-    let detail = raw;
+    let body: unknown = raw;
     try {
-      const body = JSON.parse(raw);
-      detail = body?.error ?? body?.detail ?? raw;
+      body = JSON.parse(raw);
     } catch {
       // not JSON — fall through with the raw text
     }
-    throw new ApiError(res.status, detail || res.statusText);
+    throw new ApiError(res.status, errorMessageFromBody(body, res.statusText), body);
   }
 
   // DELETE endpoints return 204 with no body.
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+function errorMessageFromBody(body: unknown, fallback: string): string {
+  if (typeof body === "string") return body || fallback;
+  const parsed = body as { detail?: unknown; error?: unknown } | null | undefined;
+  const detail = parsed?.detail;
+  if (typeof detail === "string") return detail;
+  if (
+    detail &&
+    typeof detail === "object" &&
+    "error" in detail &&
+    typeof detail.error === "string"
+  ) {
+    return detail.error;
+  }
+  if (typeof parsed?.error === "string") return parsed.error;
+  return fallback;
 }
 
 export const api = {
