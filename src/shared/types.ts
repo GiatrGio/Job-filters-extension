@@ -43,6 +43,10 @@ export interface EvaluateRequest {
 }
 
 export interface EvaluateResponse {
+  // Added after launch so fresh evaluation responses can correct a stale
+  // /me snapshot immediately after upgrade/downgrade. Optional for stored
+  // responses and older backend builds.
+  plan?: string;
   cached: boolean;
   results: EvaluationResult[];
   usage: UsageOut;
@@ -189,7 +193,14 @@ export type ExtensionMessage =
   | { type: "JOB_SCRAPED"; job: ScrapedJob }
   | { type: "REQUEST_EVALUATION"; job: ScrapedJob }
   | { type: "EVALUATION_READY"; job: ScrapedJob; response: EvaluateResponse }
-  | { type: "EVALUATION_ERROR"; jobId: string; error: string; status?: number }
+  | {
+      type: "EVALUATION_ERROR";
+      jobId: string;
+      error: string;
+      status?: number;
+      plan?: string;
+      usage?: UsageOut;
+    }
   | { type: "RESCAN" }
   | { type: "REQUEST_RESCAN" }
   | { type: "SIDEPANEL_HEARTBEAT" }

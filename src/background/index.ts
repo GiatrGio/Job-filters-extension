@@ -19,7 +19,7 @@
 import { api, ApiError } from "@/lib/api";
 import { ENV } from "@/lib/env";
 import { setLastEvaluation } from "@/lib/storage";
-import type { ExtensionMessage, ScrapedJob, StoredEvaluation } from "@/shared/types";
+import type { ExtensionMessage, ScrapedJob, StoredEvaluation, UsageOut } from "@/shared/types";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
 const sidepanelPorts = new Set<chrome.runtime.Port>();
@@ -44,13 +44,36 @@ async function evaluateJob(job: ScrapedJob): Promise<void> {
   } catch (err) {
     const status = err instanceof ApiError ? err.status : undefined;
     const message = err instanceof Error ? err.message : String(err);
+    const details = evaluationErrorDetails(err);
     await forwardToSidepanel({
       type: "EVALUATION_ERROR",
       jobId: job.linkedin_job_id,
       error: message,
       status,
+      ...details,
     });
   }
+}
+
+function evaluationErrorDetails(err: unknown): { plan?: string; usage?: UsageOut } {
+  if (!(err instanceof ApiError)) return {};
+  const body = err.body;
+  if (!body || typeof body !== "object") return {};
+  const parsed = body as { plan?: unknown; usage?: unknown };
+  return {
+    plan: typeof parsed.plan === "string" ? parsed.plan : undefined,
+    usage: isUsageOut(parsed.usage) ? parsed.usage : undefined,
+  };
+}
+
+function isUsageOut(value: unknown): value is UsageOut {
+  if (!value || typeof value !== "object") return false;
+  const usage = value as Partial<UsageOut>;
+  return (
+    typeof usage.used === "number" &&
+    typeof usage.limit === "number" &&
+    typeof usage.period === "string"
+  );
 }
 
 async function handleScrapedJob(job: ScrapedJob): Promise<void> {

@@ -23,7 +23,24 @@ type Status =
   | { kind: "idle" }
   | { kind: "loading"; jobId: string }
   | { kind: "ready"; evaluation: StoredEvaluation; cached: boolean }
-  | { kind: "error"; message: string; status?: number };
+  | { kind: "error"; message: string; status?: number; plan?: string; usage?: UsageOut };
+
+function usageOutgrewKnownFreeSnapshot(
+  nextUsage: UsageOut | null | undefined,
+  account: MeResponse | null,
+): boolean {
+  return account?.plan === "free" && nextUsage !== null && nextUsage !== undefined
+    ? nextUsage.limit > account.usage.limit
+    : false;
+}
+
+function isProEvaluationPlan(
+  nextPlan: string | null | undefined,
+  nextUsage: UsageOut | null | undefined,
+  account: MeResponse | null,
+): boolean {
+  return nextPlan === "pro" || usageOutgrewKnownFreeSnapshot(nextUsage, account);
+}
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -36,6 +53,7 @@ export default function App() {
   // initial usage line — without it we'd have to wait for the first
   // evaluation response to know how much quota is left.
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [plan, setPlan] = useState<string | null>(null);
   // Tracked separately so the footer keeps showing the most recent value
   // during the next evaluation's loading state, instead of snapping back
   // to /me's session-start snapshot.
@@ -45,6 +63,28 @@ export default function App() {
   // dismissal flag), false = already dismissed (never show again), true =
   // eligible — shown whenever there's a ready evaluation.
   const [coachMarksEligible, setCoachMarksEligible] = useState<boolean | null>(null);
+
+  function applyMeSnapshot(snapshot: MeResponse) {
+    setMe(snapshot);
+    setPlan(snapshot.plan);
+    setUsage(snapshot.usage);
+  }
+
+  function applyEvaluationAccountSnapshot(nextPlan: string | undefined, nextUsage?: UsageOut) {
+    if (nextPlan) {
+      setPlan(nextPlan);
+      setMe((current) =>
+        current
+          ? {
+              ...current,
+              plan: nextPlan,
+              usage: nextUsage ?? current.usage,
+            }
+          : current,
+      );
+    }
+    if (nextUsage) setUsage(nextUsage);
+  }
 
   async function loadProfiles() {
     try {
@@ -122,8 +162,7 @@ export default function App() {
       if (token) {
         await loadProfiles();
         api.me().then((m) => {
-          setMe(m);
-          setUsage(m.usage);
+          applyMeSnapshot(m);
         }).catch(() => {
           // /me failures are non-fatal — the panel still works without plan info,
           // we just hide the upgrade CTAs.
@@ -142,9 +181,16 @@ export default function App() {
           evaluation: { job: msg.job, response: msg.response, storedAt: Date.now() },
           cached: msg.response.cached,
         });
-        setUsage(msg.response.usage);
+        applyEvaluationAccountSnapshot(msg.response.plan, msg.response.usage);
       } else if (msg.type === "EVALUATION_ERROR") {
-        setStatus({ kind: "error", message: msg.error, status: msg.status });
+        applyEvaluationAccountSnapshot(msg.plan, msg.usage);
+        setStatus({
+          kind: "error",
+          message: msg.error,
+          status: msg.status,
+          plan: msg.plan,
+          usage: msg.usage,
+        });
       }
     };
     chrome.runtime.onMessage.addListener(onMessage);
@@ -204,8 +250,7 @@ export default function App() {
     try {
       await loadProfiles();
       api.me().then((m) => {
-        setMe(m);
-        setUsage(m.usage);
+        applyMeSnapshot(m);
       }).catch(() => {});
       chrome.runtime.sendMessage({ type: "REQUEST_RESCAN" } satisfies ExtensionMessage).catch(() => {});
     } catch (err) {
@@ -248,8 +293,16 @@ export default function App() {
 
     if (status.kind === "error") {
       const quota = status.status === 402;
+      const quotaUsage = status.usage ?? usage;
+      const quotaPlan = status.plan ?? plan;
+      const proQuota = quota && isProEvaluationPlan(quotaPlan, quotaUsage, me);
+      const freeQuota = quota && quotaPlan === "free" && !proQuota;
       const title = quota
-        ? "You've used your free evaluations for this month."
+        ? proQuota
+          ? "You've reached this month's Pro evaluation limit."
+          : freeQuota
+            ? "You've used your free evaluations for this month."
+            : "You've reached this month's evaluation limit."
         : "Evaluation failed.";
       return (
         <div className="p-4 text-sm">
@@ -257,13 +310,37 @@ export default function App() {
             {title}
           </p>
           {!quota && <p className="mt-1 text-muted-foreground">{status.message}</p>}
-          {quota && me?.plan === "free" && (
+          {proQuota && (
+            <p className="mt-1 leading-relaxed text-muted-foreground">
+              You've hit the monthly safety limit for Pro evaluations. Email{" "}
+              <a
+                href="mailto:canvasjob@gmail.com"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                canvasjob@gmail.com
+              </a>{" "}
+              and we'll refresh your limit.
+            </p>
+          )}
+          {freeQuota && (
             <button
               onClick={openPricing}
               className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Upgrade to Pro for unlimited evaluations
             </button>
+          )}
+          {quota && !freeQuota && !proQuota && (
+            <p className="mt-1 leading-relaxed text-muted-foreground">
+              Refresh your account status and try again. If this keeps happening, email{" "}
+              <a
+                href="mailto:canvasjob@gmail.com"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                canvasjob@gmail.com
+              </a>
+              .
+            </p>
           )}
         </div>
       );
@@ -313,7 +390,9 @@ export default function App() {
     );
   })();
 
-  const isFreePlan = me?.plan === "free";
+  const inferredProFromUsage = usageOutgrewKnownFreeSnapshot(usage, me);
+  const isProPlan = plan === "pro" || inferredProFromUsage;
+  const isFreePlan = plan === "free" && !inferredProFromUsage;
   const usageRatio = usage && usage.limit > 0 ? usage.used / usage.limit : 0;
   const warningThreshold = usage?.warning_threshold ?? DEFAULT_WARNING_THRESHOLD;
   const showSoftUpgrade =
@@ -342,8 +421,10 @@ export default function App() {
               >
                 {usage.used} / {usage.limit} this month
               </button>
-            ) : (
+            ) : isProPlan ? (
               <span>Pro plan · Unlimited evaluations</span>
+            ) : (
+              <span>{signedIn ? "Checking plan..." : "Usage will appear after your first evaluation"}</span>
             )
           ) : (
             <span>Usage will appear after your first evaluation</span>
