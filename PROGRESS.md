@@ -63,15 +63,26 @@
 ## First-run checklist for the user
 
 1. `cd linkedin-job-filter-extension`
-2. `cp .env.example .env` — set `VITE_SUPABASE_URL`,
-   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL`.
+2. `cp .env.example .env` — set the shared `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_PUBLISHABLE_KEY`. Endpoint overrides live in
+   `.env.development.local` for local work and `.env.production.local` for
+   Chrome Web Store builds.
 3. `npm install`
-4. `npm run dev` (or `npm run build`).
+4. `npm run dev` (or `npm run build:dev` for a static local-endpoint build).
 5. Chrome → `chrome://extensions` → Load unpacked → pick `dist/`.
 6. Copy the assigned extension ID → paste `chrome-extension://<id>` into the
    backend's `ALLOWED_ORIGINS` env var, restart backend.
 7. Click the extension icon → Options → create an account → add filters.
 8. Visit any `linkedin.com/jobs/view/<id>` page; side panel should auto-open.
+
+## Production beta build
+
+- `npm run build` loads `.env.production.local`, targeting the deployed API
+  and `https://www.canvasjob.com`.
+- Vite generates the API `host_permissions` entry from that production URL;
+  it rejects a production build that still points at localhost.
+- After Chrome Web Store assigns the extension ID, add its
+  `chrome-extension://<id>` origin to the deployed backend CORS allowlist.
 
 ## Known trade-offs worth remembering
 

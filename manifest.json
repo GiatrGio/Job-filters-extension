@@ -6,8 +6,7 @@
   "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs", "identity"],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "https://*.supabase.co/*",
-    "http://localhost:8000/*"
+    "https://*.supabase.co/*"
   ],
   "icons": {
     "16": "icons/icon-16.png",

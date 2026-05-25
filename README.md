@@ -9,10 +9,21 @@ See the top-level `CLAUDE.md` for the product/architecture spec.
 ## Local dev
 
 ```bash
-cp .env.example .env           # fill in Supabase + backend URLs
+cp .env.example .env           # fill in shared Supabase client settings
 npm install
 npm run dev                    # Vite + CRXJS (HMR)
 ```
+
+The checked-out workspace uses Vite mode-specific local overrides:
+
+| File | Used by | Endpoint purpose |
+|---|---|---|
+| `.env.development.local` | `npm run dev`, `npm run build:dev` | Local backend and website |
+| `.env.production.local` | `npm run build` | Deployed backend and `https://www.canvasjob.com` |
+
+Both files are ignored by git. Keep `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_PUBLISHABLE_KEY` in `.env`; Vite merges those shared values
+with the endpoint overrides for the selected mode.
 
 Then in Chrome:
 
@@ -34,9 +45,36 @@ backend's `ALLOWED_ORIGINS` (`chrome-extension://<id>`) so CORS passes.
 | Command            | What it does                                          |
 |--------------------|-------------------------------------------------------|
 | `npm run dev`      | Vite + CRXJS, watches `src/`, writes to `dist/`.      |
-| `npm run build`    | Type-checks and builds a production bundle in `dist/`.|
+| `npm run build:dev`| Type-checks and produces a local-endpoint build.       |
+| `npm run build`    | Type-checks and builds the Web Store production bundle.|
 | `npm run typecheck`| `tsc --noEmit`.                                       |
 | `npm run test`     | Vitest. Only a smoke suite is wired up today.         |
+
+The API `host_permissions` entry is generated from the mode's
+`VITE_API_URL`. Production builds fail if that URL points at localhost, so a
+store ZIP cannot accidentally request local development access.
+
+## Chrome Web Store beta build
+
+The production override currently points at the deployed Fly.io API and
+website:
+
+```env
+VITE_API_URL=https://job-filters-backend.fly.dev
+VITE_WEB_URL=https://www.canvasjob.com
+```
+
+Create an uploadable build with:
+
+```bash
+npm run build
+cd dist
+zip -r ../canvasjob-beta-0.1.0.zip .
+```
+
+Before publishing a later update, increment `version` in `manifest.json`.
+After the Chrome Web Store assigns the beta extension ID, add
+`chrome-extension://<extension-id>` to the deployed backend CORS allowlist.
 
 ## Layout
 
