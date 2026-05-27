@@ -50,8 +50,10 @@ backend's `ALLOWED_ORIGINS` (`chrome-extension://<id>`) so CORS passes.
 | `npm run typecheck`| `tsc --noEmit`.                                       |
 | `npm run test`     | Vitest. Only a smoke suite is wired up today.         |
 
-The API `host_permissions` entry is generated from the mode's
-`VITE_API_URL`. Production builds fail if that URL points at localhost, so a
+The API and Supabase `host_permissions` entries are generated from the mode's
+`VITE_API_URL` and the shared `VITE_SUPABASE_URL`. This keeps production
+access limited to canvasjob's configured services rather than every Supabase
+project. Production builds fail if the API URL points at localhost, so a
 store ZIP cannot accidentally request local development access.
 
 ## Chrome Web Store beta build

@@ -79,8 +79,9 @@
 
 - `npm run build` loads `.env.production.local`, targeting the deployed API
   and `https://www.canvasjob.com`.
-- Vite generates the API `host_permissions` entry from that production URL;
-  it rejects a production build that still points at localhost.
+- Vite generates the API and exact Supabase `host_permissions` entries from
+  the production API URL and shared Supabase URL; it rejects a production
+  build that still points at a localhost API.
 - After Chrome Web Store assigns the extension ID, add its
   `chrome-extension://<id>` origin to the deployed backend CORS allowlist.
 

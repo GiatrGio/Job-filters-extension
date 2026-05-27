@@ -11,7 +11,7 @@ import { DEFAULT_WARNING_THRESHOLD } from "@/shared/types";
 import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation, getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import { getAccessToken } from "@/lib/auth";
-import { openHowItWorks, openPricing } from "@/lib/links";
+import { openHowItWorks } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
 import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
 
@@ -324,10 +324,11 @@ export default function App() {
           )}
           {freeQuota && (
             <button
-              onClick={openPricing}
-              className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              type="button"
+              disabled
+              className="mt-3 w-full cursor-not-allowed rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground opacity-60"
             >
-              Upgrade to Pro for unlimited evaluations
+              Pro coming soon...
             </button>
           )}
           {quota && !freeQuota && !proQuota && (
@@ -395,7 +396,7 @@ export default function App() {
   const isFreePlan = plan === "free" && !inferredProFromUsage;
   const usageRatio = usage && usage.limit > 0 ? usage.used / usage.limit : 0;
   const warningThreshold = usage?.warning_threshold ?? DEFAULT_WARNING_THRESHOLD;
-  const showSoftUpgrade =
+  const showFreeUsageWarning =
     isFreePlan && usage !== null && usageRatio >= warningThreshold && usageRatio < 1;
 
   return (
@@ -403,24 +404,17 @@ export default function App() {
       <main className="flex-1 overflow-y-auto">{evalView}</main>
 
       <footer className="border-t px-3 py-2 text-xs text-muted-foreground">
-        {showSoftUpgrade && (
-          <button
-            onClick={openPricing}
-            className="mb-1 w-full text-center font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Approaching your monthly limit — upgrade for unlimited
-          </button>
+        {showFreeUsageWarning && (
+          <p className="mb-1 w-full text-center font-medium text-muted-foreground">
+            Approaching your monthly evaluation limit
+          </p>
         )}
         <div className="flex items-center justify-between">
           {usage ? (
             isFreePlan ? (
-              <button
-                onClick={openPricing}
-                className="underline-offset-4 hover:text-foreground hover:underline"
-                title="See Pro plan"
-              >
+              <span>
                 {usage.used} / {usage.limit} this month
-              </button>
+              </span>
             ) : isProPlan ? (
               <span>Pro plan · Unlimited evaluations</span>
             ) : (
@@ -503,14 +497,15 @@ function TrackedJobLimitPage({
         </h2>
         <p className="mt-2 leading-relaxed text-muted-foreground">
           Free includes {displayedLimit} tracked jobs at once. Remove a job from
-          your tracker, or upgrade to Pro for unlimited tracked jobs and evaluations.
+          your tracker to save another one during beta.
         </p>
         <div className="mt-4 space-y-2">
           <button
-            onClick={openPricing}
-            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            type="button"
+            disabled
+            className="w-full cursor-not-allowed rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground opacity-60"
           >
-            Upgrade to Pro
+            Pro coming soon...
           </button>
           <button
             onClick={onBack}

@@ -34,7 +34,6 @@ import {
 import type { Provider } from "@supabase/supabase-js";
 import { api, ApiError } from "@/lib/api";
 import { getSupabase, signInWithOAuth, signOut } from "@/lib/auth";
-import { openPricing } from "@/lib/links";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import {
@@ -228,11 +227,12 @@ function Header({ email }: { email: string | null }) {
                 <span>{formatPlanLine(me)}</span>
                 {me?.plan === "free" && (
                   <button
-                    onClick={openPricing}
-                    className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80"
-                    title="See Pro plan benefits"
+                    type="button"
+                    disabled
+                    className="cursor-not-allowed rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground opacity-70"
+                    title="Pro subscriptions are coming soon"
                   >
-                    Upgrade to Pro
+                    Pro coming soon
                   </button>
                 )}
               </div>
