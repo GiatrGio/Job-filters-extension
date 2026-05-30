@@ -14,6 +14,7 @@ import { getAccessToken } from "@/lib/auth";
 import { openHowItWorks } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
 import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
+import { CompanyResearchLinks } from "./components/CompanyResearchLinks";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
 const SIDEPANEL_HEARTBEAT_MS = 20_000;
@@ -371,6 +372,7 @@ export default function App() {
           <div className="text-sm text-muted-foreground">
             {[job.job_company, job.job_location].filter(Boolean).join(" · ")}
           </div>
+          <CompanyResearchLinks company={job.job_company} />
         </div>
         {response.results.length === 0 ? (
           <div className="text-sm text-muted-foreground">

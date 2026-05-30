@@ -13,6 +13,23 @@ function openTab(url: string): void {
   void chrome.tabs.create({ url, active: true });
 }
 
+function openCompanySearch(
+  baseUrl: string,
+  queryParam: string,
+  company: string,
+  extraParams: Record<string, string> = {},
+): void {
+  const query = company.trim();
+  if (!query) return;
+
+  const url = new URL(baseUrl);
+  url.searchParams.set(queryParam, query);
+  for (const [key, value] of Object.entries(extraParams)) {
+    url.searchParams.set(key, value);
+  }
+  openTab(url.toString());
+}
+
 export function openPricing(): void {
   openTab(`${ENV.WEB_URL}/pricing`);
 }
@@ -27,4 +44,14 @@ export function openDashboard(): void {
 
 export function openHowItWorks(): void {
   openTab(`${ENV.WEB_URL}/#how-it-works`);
+}
+
+export function openGlassdoorCompanySearch(company: string): void {
+  openCompanySearch("https://www.glassdoor.com/Reviews/index.htm", "employerName", company, {
+    page: "1",
+  });
+}
+
+export function openIndeedCompanySearch(company: string): void {
+  openCompanySearch("https://www.indeed.com/companies/search", "q", company);
 }
