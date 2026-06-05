@@ -104,7 +104,7 @@ URL belongs in Supabase's redirect URL list.
 ```
 src/
 ├── background/    service worker — routes messages, calls backend
-├── content/       DOM scraper for linkedin.com/jobs/*
+├── content/       DOM scraper (injected site-wide on linkedin.com; acts on job views)
 ├── sidepanel/     side-panel React UI (result checklist)
 ├── options/       options page React UI (auth + filter CRUD)
 ├── lib/           api client, Supabase auth, chrome.storage, LinkedIn selectors

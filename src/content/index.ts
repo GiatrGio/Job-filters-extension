@@ -1,10 +1,18 @@
-// Content script — runs on linkedin.com/jobs/*.
+// Content script — runs on all of linkedin.com.
 //
 // Responsibilities:
 //   1. Detect when the user is looking at a job posting (URL change or SPA nav).
 //   2. Wait for the DOM to be populated, then scrape the job.
 //   3. Send the scraped job to the background worker, which handles caching
 //      and backend calls.
+//
+// It injects site-wide (not just /jobs/*) on purpose: LinkedIn is an SPA, and
+// content scripts only inject on a full document load that matches the manifest
+// pattern. If we matched only /jobs/*, a user who opens LinkedIn on the feed and
+// then navigates into a job via pushState would never get a content script — and
+// would have to hard-refresh for evaluations to work. The script no-ops on
+// non-job URLs (getJobIdFromUrl returns null), so the cost off the jobs pages is
+// just an idle locationchange listener and a cheap MutationObserver check.
 //
 // We debounce aggressively because LinkedIn's SPA re-renders a lot and we
 // want at most one JOB_SCRAPED message per job view.
@@ -13,6 +21,7 @@ import { getJobIdFromUrl, waitForJobContent } from "@/lib/linkedin";
 import type { ExtensionMessage, ScrapedJob } from "@/shared/types";
 
 const DEBOUNCE_MS = 1500;
+const URL_POLL_MS = 1000;
 
 type CanvasjobContentState = {
   rescan: () => void;
@@ -28,6 +37,9 @@ type CanvasjobWindow = typeof window & {
 //   2. pushState/replaceState (programmatic navigation — monkey-patched below)
 //   3. MutationObserver fallback, for the rare case the SPA updates the DOM
 //      without changing the URL.
+//   4. A 1s URL poll — in the /jobs/search two-pane view, switching jobs swaps
+//      content inside an iframe and only updates the URL's currentJobId, which
+//      none of the above reliably catch.
 // -----------------------------------------------------------------------------
 
 const canvasWindow = window as CanvasjobWindow;
@@ -108,6 +120,19 @@ function install(): CanvasjobContentState {
     if (currentId && currentId !== lastHandledJobId) scheduleHandle();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Safety net: in the /jobs/search two-pane view, switching jobs swaps the
+  // content inside an iframe and updates the URL's `currentJobId` without
+  // necessarily mutating the top document, so the listeners above may not fire.
+  // Poll the URL so every job change is detected regardless.
+  let lastSeenUrlJobId = getJobIdFromUrl();
+  setInterval(() => {
+    const id = getJobIdFromUrl();
+    if (id && id !== lastSeenUrlJobId) {
+      lastSeenUrlJobId = id;
+      scheduleHandle();
+    }
+  }, URL_POLL_MS);
 
   // The background worker asks for a re-scan when the side panel opens, so the
   // user sees a result for the job they're already viewing.

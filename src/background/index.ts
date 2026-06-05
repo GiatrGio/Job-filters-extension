@@ -99,7 +99,7 @@ function getContentScriptFiles(): string[] {
   const manifest = chrome.runtime.getManifest();
   return (
     manifest.content_scripts
-      ?.filter((script) => script.matches?.some((match) => match.includes("linkedin.com/jobs")))
+      ?.filter((script) => script.matches?.some((match) => match.includes("linkedin.com")))
       .flatMap((script) => script.js ?? []) ?? []
   );
 }
