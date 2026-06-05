@@ -37,8 +37,11 @@ Then in Chrome:
 5. Visit a LinkedIn job posting. The side panel will auto-open with an
    evaluation.
 
-The dev extension ID is stable per unpacked load — copy it into the
-backend's `ALLOWED_ORIGINS` (`chrome-extension://<id>`) so CORS passes.
+The dev extension ID is stable per unpacked load. Copy it into the backend's
+`ALLOWED_ORIGINS` (`chrome-extension://<id>`) so CORS passes. If you want
+Google OAuth to work in the local extension too, also add the matching Chrome
+Identity callback to Supabase Auth redirect URLs:
+`https://<dev-extension-id>.chromiumapp.org/`.
 
 ## Scripts
 
@@ -77,6 +80,24 @@ zip -r ../canvasjob-beta-0.1.0.zip .
 Before publishing a later update, increment `version` in `manifest.json`.
 After the Chrome Web Store assigns the beta extension ID, add
 `chrome-extension://<extension-id>` to the deployed backend CORS allowlist.
+
+Also add the extension OAuth callback to Supabase:
+
+```text
+Supabase Dashboard
+  Authentication
+  URL Configuration
+  Redirect URLs
+  https://<extension-id>.chromiumapp.org/
+```
+
+The extension signs in with Google through `chrome.identity.getRedirectURL()`,
+which returns that `chromiumapp.org` URL. If Supabase does not allow-list it,
+Supabase redirects to the project's Site URL instead, leaving users on
+`https://www.canvasjob.com/?code=...` inside the Chrome auth popup. The Google
+Cloud OAuth redirect URI should stay pointed at Supabase's callback
+(`https://<project-ref>.supabase.co/auth/v1/callback`); the `chromiumapp.org`
+URL belongs in Supabase's redirect URL list.
 
 ## Layout
 

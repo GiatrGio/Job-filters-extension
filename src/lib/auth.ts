@@ -1,6 +1,12 @@
 import { createClient, type Provider, type SupabaseClient } from "@supabase/supabase-js";
 import { ENV } from "./env";
 
+function getSupabaseProjectRef(): string {
+  return new URL(ENV.SUPABASE_URL).hostname.split(".")[0];
+}
+
+export const SUPABASE_AUTH_STORAGE_KEY = `sb-${getSupabaseProjectRef()}-auth-token`;
+
 // Custom storage adapter so Supabase persists its session in chrome.storage
 // instead of localStorage — crucial for the service worker, which has no
 // localStorage at all.

@@ -10,7 +10,7 @@ import type {
 import { DEFAULT_WARNING_THRESHOLD } from "@/shared/types";
 import { api, ApiError } from "@/lib/api";
 import { getLastEvaluation, getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, SUPABASE_AUTH_STORAGE_KEY } from "@/lib/auth";
 import { openHowItWorks } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
 import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
@@ -146,29 +146,47 @@ export default function App() {
       }
     }
 
+    async function syncAuthState(options: { requestRescan?: boolean } = {}) {
+      const token = await getAccessToken();
+      if (!token) {
+        setSignedIn(false);
+        setProfiles([]);
+        setActiveProfileId(null);
+        setMe(null);
+        setPlan(null);
+        setUsage(null);
+        setTrackedJobLimit(null);
+        return;
+      }
+
+      setSignedIn(true);
+      setTrackedJobLimit(null);
+      await loadProfiles();
+      api.me().then((m) => {
+        applyMeSnapshot(m);
+      }).catch(() => {
+        // /me failures are non-fatal — the panel still works without plan info,
+        // we just hide the upgrade CTAs.
+      });
+
+      if (options.requestRescan) {
+        chrome.runtime.sendMessage({ type: "REQUEST_RESCAN" } satisfies ExtensionMessage).catch(() => {});
+      }
+    }
+
     connectPort();
 
     void (async () => {
-      const [last, token, coachDismissed] = await Promise.all([
+      const [last, coachDismissed] = await Promise.all([
         getLastEvaluation(),
-        getAccessToken(),
         getOnboardingFlag("coachMarksDismissed"),
       ]);
-      setSignedIn(!!token);
       setCoachMarksEligible(!coachDismissed);
       if (last) {
         setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
         setUsage(last.response.usage);
       }
-      if (token) {
-        await loadProfiles();
-        api.me().then((m) => {
-          applyMeSnapshot(m);
-        }).catch(() => {
-          // /me failures are non-fatal — the panel still works without plan info,
-          // we just hide the upgrade CTAs.
-        });
-      }
+      await syncAuthState();
     })();
 
     const onMessage = (msg: ExtensionMessage) => {
@@ -195,11 +213,22 @@ export default function App() {
       }
     };
     chrome.runtime.onMessage.addListener(onMessage);
+
+    const onStorageChanged = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) => {
+      if (areaName !== "local" || !(SUPABASE_AUTH_STORAGE_KEY in changes)) return;
+      void syncAuthState({ requestRescan: true });
+    };
+    chrome.storage.onChanged.addListener(onStorageChanged);
+
     return () => {
       stopped = true;
       clearHeartbeat();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       chrome.runtime.onMessage.removeListener(onMessage);
+      chrome.storage.onChanged.removeListener(onStorageChanged);
       try {
         port?.disconnect();
       } catch {
