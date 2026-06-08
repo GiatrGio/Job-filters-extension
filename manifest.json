@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "canvasjob",
   "description": "Evaluate LinkedIn job postings against your custom, free-text filters.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "permissions": ["sidePanel", "storage", "scripting", "identity"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "icons": {
