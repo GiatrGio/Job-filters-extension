@@ -188,9 +188,42 @@ export interface ScrapedJob {
   job_description: string;
 }
 
+// Diagnostics sent to the backend when DOM extraction fails or comes back
+// partial (Measure 3). Mirrors app/schemas/diagnostics.py on the backend.
+// "Capture the job, exclude the user": telemetry + a sanitized snapshot of the
+// JOB POSTING subtree only — the member's identity and the global chrome are
+// excluded/redacted (see lib/linkedin/snapshot for the privacy rationale). One
+// per browser session, gated in the background.
+export interface DomFieldReport {
+  name: string; // "title" | "company" | "location" | "description"
+  found: boolean;
+  // The strategy that produced the value (a selector string, "doc-title",
+  // "anchor", …) or null when nothing matched. Never the value itself.
+  source: string | null;
+}
+
+export interface DomDiagnosticsPayload {
+  extractor: string; // e.g. "jobs-v1"
+  outcome: "ok" | "partial" | "failed";
+  job_id: string;
+  url: string;
+  doc_title: string; // the job's <title>, never the member's identity
+  missing: string[];
+  fields: DomFieldReport[];
+  // Sanitized job-container HTML (structure + job text; member identity, global
+  // chrome and media excluded/redacted; capped ~50KB). null when no usable job
+  // subtree was found. This is what lets us see where moved fields now live.
+  job_html: string | null;
+  user_agent: string;
+  captured_at: string; // ISO
+}
+
 // Messages exchanged between content script, background worker, and side panel.
 export type ExtensionMessage =
-  | { type: "JOB_SCRAPED"; job: ScrapedJob }
+  // diagnostics is attached on a "partial" scrape (description present, identity
+  // missing) so the background can fire a telemetry report while still
+  // evaluating. Absent on a clean ("ok") scrape.
+  | { type: "JOB_SCRAPED"; job: ScrapedJob; diagnostics?: DomDiagnosticsPayload }
   | { type: "REQUEST_EVALUATION"; job: ScrapedJob }
   | { type: "EVALUATION_READY"; job: ScrapedJob; response: EvaluateResponse }
   | {
@@ -201,6 +234,9 @@ export type ExtensionMessage =
       plan?: string;
       usage?: UsageOut;
     }
+  // Sent when extraction failed outright (no description anywhere). The side
+  // panel shows the "LinkedIn changed" wall; the background fires a diagnostic.
+  | { type: "SCRAPE_FAILED"; jobId: string; diagnostics: DomDiagnosticsPayload }
   | { type: "RESCAN" }
   | { type: "REQUEST_RESCAN" }
   | { type: "SIDEPANEL_HEARTBEAT" }

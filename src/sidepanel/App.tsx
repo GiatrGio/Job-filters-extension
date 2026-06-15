@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleArrowUp, HelpCircle, ListChecks, RefreshCw, Search } from "lucide-react";
+import { CheckCircle2, CircleArrowUp, HelpCircle, ListChecks, RefreshCw, Search, Wrench } from "lucide-react";
 import type {
   ExtensionMessage,
   FilterProfileWithFilters,
@@ -24,6 +24,7 @@ type Status =
   | { kind: "idle" }
   | { kind: "loading"; jobId: string }
   | { kind: "ready"; evaluation: StoredEvaluation; cached: boolean }
+  | { kind: "scrape_failed"; jobId: string }
   | { kind: "error"; message: string; status?: number; plan?: string; usage?: UsageOut };
 
 function usageOutgrewKnownFreeSnapshot(
@@ -201,6 +202,9 @@ export default function App() {
           cached: msg.response.cached,
         });
         applyEvaluationAccountSnapshot(msg.response.plan, msg.response.usage);
+      } else if (msg.type === "SCRAPE_FAILED") {
+        setTrackedJobLimit(null);
+        setStatus({ kind: "scrape_failed", jobId: msg.jobId });
       } else if (msg.type === "EVALUATION_ERROR") {
         applyEvaluationAccountSnapshot(msg.plan, msg.usage);
         setStatus({
@@ -319,6 +323,10 @@ export default function App() {
       return (
         <div className="p-4 text-sm text-muted-foreground">Evaluating job {status.jobId}…</div>
       );
+    }
+
+    if (status.kind === "scrape_failed") {
+      return <LinkedInChangedWall />;
     }
 
     if (status.kind === "error") {
@@ -505,6 +513,41 @@ export default function App() {
           )}
         </div>
       </footer>
+    </div>
+  );
+}
+
+// Shown when extraction failed outright (no description anywhere). LinkedIn
+// ships DOM changes that break our selectors for some accounts; rather than a
+// half-broken result, we tell the user plainly and reassure them a fix is
+// coming. A diagnostic has already been sent in the background (Measure 3), so
+// "we're already on it" is literally true.
+function LinkedInChangedWall() {
+  function retry() {
+    chrome.runtime.sendMessage({ type: "REQUEST_RESCAN" } satisfies ExtensionMessage).catch(() => {});
+  }
+
+  return (
+    <div className="flex min-h-full flex-col justify-center p-4 text-sm">
+      <div className="mx-auto w-full max-w-sm rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Wrench size={20} aria-hidden="true" />
+        </div>
+        <h2 className="text-base font-semibold text-foreground">
+          We couldn&apos;t read this job
+        </h2>
+        <p className="mt-2 leading-relaxed text-muted-foreground">
+          LinkedIn recently changed how this page is built, so we couldn&apos;t pull the
+          job details to evaluate. We&apos;ve been notified automatically and are already
+          working on a fix — please try again shortly.
+        </p>
+        <button
+          onClick={retry}
+          className="mt-4 w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Try again
+        </button>
+      </div>
     </div>
   );
 }

@@ -17,8 +17,8 @@
 // We debounce aggressively because LinkedIn's SPA re-renders a lot and we
 // want at most one JOB_SCRAPED message per job view.
 
-import { getJobIdFromUrl, waitForJobContent } from "@/lib/linkedin";
-import type { ExtensionMessage, ScrapedJob } from "@/shared/types";
+import { buildDomDiagnostics, getJobIdFromUrl, waitForJobContent } from "@/lib/linkedin";
+import type { ExtensionMessage } from "@/shared/types";
 
 const DEBOUNCE_MS = 1500;
 const URL_POLL_MS = 1000;
@@ -76,11 +76,27 @@ function install(): CanvasjobContentState {
     if (!jobId) return;
     if (jobId === lastHandledJobId) return;
 
-    const job: ScrapedJob | null = await waitForJobContent();
-    if (!job) return;
+    const result = await waitForJobContent();
+    if (!result) return; // not a job page after all (no job id)
 
-    lastHandledJobId = job.linkedin_job_id;
-    send({ type: "JOB_SCRAPED", job });
+    lastHandledJobId = result.jobId;
+
+    if (result.outcome === "failed" || result.job === null) {
+      // No description anywhere — there's nothing to evaluate. Tell the side
+      // panel to show the "LinkedIn changed" wall and ship a diagnostic so we
+      // can see what broke (Measure 2 + 3).
+      send({ type: "SCRAPE_FAILED", jobId: result.jobId, diagnostics: buildDomDiagnostics(result) });
+      return;
+    }
+
+    // "ok" → evaluate normally. "partial" → still evaluate (the description is
+    // what the LLM reads) but attach a diagnostic so we learn which identity
+    // selector broke. A clean scrape sends no diagnostics.
+    send({
+      type: "JOB_SCRAPED",
+      job: result.job,
+      diagnostics: result.outcome === "partial" ? buildDomDiagnostics(result) : undefined,
+    });
   }
 
   function scheduleHandle(): void {

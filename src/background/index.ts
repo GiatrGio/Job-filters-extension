@@ -19,10 +19,21 @@
 import { api, ApiError } from "@/lib/api";
 import { ENV } from "@/lib/env";
 import { setLastEvaluation } from "@/lib/storage";
-import type { ExtensionMessage, ScrapedJob, StoredEvaluation, UsageOut } from "@/shared/types";
+import type {
+  DomDiagnosticsPayload,
+  ExtensionMessage,
+  ScrapedJob,
+  StoredEvaluation,
+  UsageOut,
+} from "@/shared/types";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
 const sidepanelPorts = new Set<chrome.runtime.Port>();
+
+// Cost control for DOM diagnostics: at most one report per browser session.
+// chrome.storage.session is in-memory (cleared on browser restart) and
+// background-only by default, so it's a clean cross-tab, per-session guard.
+const DIAGNOSTIC_SESSION_FLAG = "domDiagnosticSentThisSession";
 
 function isSidepanelOpen(): boolean {
   return sidepanelPorts.size > 0;
@@ -76,12 +87,41 @@ function isUsageOut(value: unknown): value is UsageOut {
   );
 }
 
-async function handleScrapedJob(job: ScrapedJob): Promise<void> {
+async function handleScrapedJob(job: ScrapedJob, diagnostics?: DomDiagnosticsPayload): Promise<void> {
+  // Fire diagnostics regardless of panel state so we learn about partial
+  // breakage even for users who never open the panel — it's capped at one per
+  // session and doesn't touch the user's quota.
+  if (diagnostics) void maybeSendDiagnostics(diagnostics);
   if (!isSidepanelOpen()) {
     return;
   }
   await forwardToSidepanel({ type: "JOB_SCRAPED", job });
   await evaluateJob(job);
+}
+
+async function handleScrapeFailed(jobId: string, diagnostics: DomDiagnosticsPayload): Promise<void> {
+  void maybeSendDiagnostics(diagnostics);
+  if (!isSidepanelOpen()) {
+    return;
+  }
+  // Show the "LinkedIn changed" wall instead of a half-broken result.
+  await forwardToSidepanel({ type: "SCRAPE_FAILED", jobId, diagnostics });
+}
+
+// Best-effort, fire-and-forget DOM telemetry. Never disrupts the user: any
+// failure (offline, signed out, endpoint down) is swallowed, and the session
+// flag is released so a later failure in the same session can retry.
+async function maybeSendDiagnostics(payload: DomDiagnosticsPayload): Promise<void> {
+  try {
+    const existing = await chrome.storage.session.get(DIAGNOSTIC_SESSION_FLAG);
+    if (existing[DIAGNOSTIC_SESSION_FLAG]) return;
+    await chrome.storage.session.set({ [DIAGNOSTIC_SESSION_FLAG]: true });
+    await api.sendDomDiagnostics(payload);
+  } catch (err) {
+    await chrome.storage.session.remove(DIAGNOSTIC_SESSION_FLAG).catch(() => {});
+    // eslint-disable-next-line no-console
+    console.debug("[canvasjob] Could not send DOM diagnostics", err);
+  }
 }
 
 // Ask any active LinkedIn tabs to re-emit their current job. Used when the
@@ -142,7 +182,11 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, _sendResponse) => {
   if (message.type === "JOB_SCRAPED") {
-    void handleScrapedJob(message.job);
+    void handleScrapedJob(message.job, message.diagnostics);
+    return false;
+  }
+  if (message.type === "SCRAPE_FAILED") {
+    void handleScrapeFailed(message.jobId, message.diagnostics);
     return false;
   }
   if (message.type === "REQUEST_EVALUATION") {

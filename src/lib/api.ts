@@ -3,6 +3,7 @@ import { getAccessToken } from "./auth";
 import type {
   Application,
   ApplicationCreate,
+  DomDiagnosticsPayload,
   EvaluateRequest,
   EvaluateResponse,
   FilterCreate,
@@ -87,6 +88,15 @@ export const api = {
     }),
 
   me: () => request<MeResponse>("/me"),
+
+  // Best-effort DOM telemetry sent on extraction failure/partial (Measure 3).
+  // The backend logs it, runs a diagnostic LLM analysis, and surfaces it in
+  // /admin. Returns 204 — the client doesn't need the analysis.
+  sendDomDiagnostics: (body: DomDiagnosticsPayload) =>
+    request<void>("/diagnostics/dom", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // --- profiles --------------------------------------------------------------
   listProfiles: () => request<FilterProfileWithFilters[]>("/profiles"),
