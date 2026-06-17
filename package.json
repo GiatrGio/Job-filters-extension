@@ -1,6 +1,6 @@
 {
   "name": "linkedin-job-filter-extension",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "Chrome extension that evaluates LinkedIn job postings against user-defined free-text filters.",
   "type": "module",
