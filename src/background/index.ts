@@ -18,12 +18,13 @@
 
 import { api, ApiError } from "@/lib/api";
 import { ENV } from "@/lib/env";
-import { setLastEvaluation } from "@/lib/storage";
+import { setLastEvaluation, setLastFit } from "@/lib/storage";
 import type {
   DomDiagnosticsPayload,
   ExtensionMessage,
   ScrapedJob,
   StoredEvaluation,
+  StoredFit,
   UsageOut,
 } from "@/shared/types";
 
@@ -66,6 +67,32 @@ async function evaluateJob(job: ScrapedJob): Promise<void> {
   }
 }
 
+// Fit runs in parallel with evaluateJob (a separate backend call + cache) so a
+// slow fit never delays the filter checklist. Independently swallows its own
+// errors and forwards its own message, so one side failing never affects the
+// other.
+async function evaluateFit(job: ScrapedJob): Promise<void> {
+  try {
+    const response = await api.evaluateFit(job);
+    const stored: StoredFit = {
+      jobId: job.linkedin_job_id,
+      response,
+      storedAt: Date.now(),
+    };
+    await setLastFit(stored);
+    await forwardToSidepanel({ type: "FIT_READY", job, response });
+  } catch (err) {
+    const status = err instanceof ApiError ? err.status : undefined;
+    const message = err instanceof Error ? err.message : String(err);
+    await forwardToSidepanel({
+      type: "FIT_ERROR",
+      jobId: job.linkedin_job_id,
+      error: message,
+      status,
+    });
+  }
+}
+
 function evaluationErrorDetails(err: unknown): { plan?: string; usage?: UsageOut } {
   if (!(err instanceof ApiError)) return {};
   const body = err.body;
@@ -96,7 +123,9 @@ async function handleScrapedJob(job: ScrapedJob, diagnostics?: DomDiagnosticsPay
     return;
   }
   await forwardToSidepanel({ type: "JOB_SCRAPED", job });
-  await evaluateJob(job);
+  // Filters and fit are independent backend calls; fire both concurrently so
+  // total latency is max(filter, fit) rather than the sum.
+  await Promise.all([evaluateJob(job), evaluateFit(job)]);
 }
 
 async function handleScrapeFailed(jobId: string, diagnostics: DomDiagnosticsPayload): Promise<void> {
@@ -190,8 +219,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, _sendR
     return false;
   }
   if (message.type === "REQUEST_EVALUATION") {
-    // Manual re-evaluate from the side panel.
+    // Manual re-evaluate from the side panel — refresh both filters and fit.
     void evaluateJob(message.job);
+    void evaluateFit(message.job);
     return false;
   }
   if (message.type === "REQUEST_RESCAN") {

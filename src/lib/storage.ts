@@ -1,6 +1,7 @@
-import type { StoredEvaluation } from "@/shared/types";
+import type { StoredEvaluation, StoredFit } from "@/shared/types";
 
 const LAST_EVAL_KEY = "lastEvaluation";
+const LAST_FIT_KEY = "lastFit";
 
 export async function getLastEvaluation(): Promise<StoredEvaluation | null> {
   const r = await chrome.storage.local.get(LAST_EVAL_KEY);
@@ -9,6 +10,15 @@ export async function getLastEvaluation(): Promise<StoredEvaluation | null> {
 
 export async function setLastEvaluation(value: StoredEvaluation): Promise<void> {
   await chrome.storage.local.set({ [LAST_EVAL_KEY]: value });
+}
+
+export async function getLastFit(): Promise<StoredFit | null> {
+  const r = await chrome.storage.local.get(LAST_FIT_KEY);
+  return (r[LAST_FIT_KEY] as StoredFit) ?? null;
+}
+
+export async function setLastFit(value: StoredFit): Promise<void> {
+  await chrome.storage.local.set({ [LAST_FIT_KEY]: value });
 }
 
 // Onboarding flags. Each is a boolean we flip to true once dismissed; absent

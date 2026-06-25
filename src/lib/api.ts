@@ -3,7 +3,10 @@ import { getAccessToken } from "./auth";
 import type {
   Application,
   ApplicationCreate,
+  CvProfile,
+  CvProfileResponse,
   DomDiagnosticsPayload,
+  EvaluateFitResponse,
   EvaluateRequest,
   EvaluateResponse,
   FilterCreate,
@@ -30,19 +33,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = await getAccessToken();
-  if (!token) throw new ApiError(401, "not signed in");
-
-  const res = await fetch(`${ENV.API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(init.headers ?? {}),
-    },
-  });
-
+async function parseResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     // Read once as text, then try to parse as JSON. Calling res.json()
     // first and falling back to res.text() throws "body stream already read"
@@ -61,6 +52,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // DELETE endpoints return 204 with no body.
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError(401, "not signed in");
+
+  const res = await fetch(`${ENV.API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
+  return parseResponse<T>(res);
+}
+
+// Multipart upload (CV file). Deliberately does NOT set Content-Type — the
+// browser adds the multipart boundary itself.
+async function requestForm<T>(path: string, form: FormData): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError(401, "not signed in");
+
+  const res = await fetch(`${ENV.API_URL}${path}`, {
+    method: "POST",
+    body: form,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseResponse<T>(res);
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {
@@ -86,6 +106,34 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // Fit evaluation — separate endpoint from /evaluate so the side panel can
+  // render the filter checklist and the match meter independently.
+  evaluateFit: (body: EvaluateRequest) =>
+    request<EvaluateFitResponse>("/evaluate-fit", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // --- CV / job fit ---------------------------------------------------------
+  // 200 + null when the user has not uploaded a CV yet.
+  getCv: () => request<CvProfileResponse | null>("/cv"),
+
+  uploadCv: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return requestForm<CvProfileResponse>("/cv", form);
+  },
+
+  // Save a user-edited profile (e.g. added skills). Re-hashes server-side, so
+  // the next job view re-evaluates fit against the edited profile.
+  updateCv: (profile: CvProfile) =>
+    request<CvProfileResponse>("/cv", {
+      method: "PUT",
+      body: JSON.stringify(profile),
+    }),
+
+  deleteCv: () => request<void>("/cv", { method: "DELETE" }),
 
   me: () => request<MeResponse>("/me"),
 

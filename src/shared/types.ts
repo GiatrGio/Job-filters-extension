@@ -52,6 +52,60 @@ export interface EvaluateResponse {
   usage: UsageOut;
 }
 
+// --- Job fit (CV-based match) ----------------------------------------------
+// Mirrors app/schemas/fit.py. Fit is evaluated in a SEPARATE backend call from
+// filter evaluation (POST /evaluate-fit), cached independently (keyed by the
+// CV, not the filters), so the side panel renders the match meter independently
+// of the filter checklist — and a filter edit never re-runs fit, nor vice versa.
+export interface FitPoint {
+  point: string;
+  evidence: string;
+}
+
+export interface FitDimensions {
+  skills: number; // 1–5
+  experience: number; // 1–5
+  domain: number; // 1–5
+}
+
+export interface JobFitResult {
+  score: number; // overall 1–5
+  dimensions: FitDimensions;
+  strengths: FitPoint[];
+  gaps: FitPoint[];
+  summary: string;
+}
+
+export interface EvaluateFitResponse {
+  cached: boolean;
+  // false when the user hasn't uploaded a CV yet → the side panel shows the
+  // "upload your CV" empty state and `fit` is null.
+  has_cv: boolean;
+  fit: JobFitResult | null;
+  usage: UsageOut;
+}
+
+// --- CV profile (job-fit setup) --------------------------------------------
+// Mirrors app/schemas/cv.py. Only non-PII professional signal is stored; the
+// uploaded file is parsed server-side and discarded (no name/email/phone).
+export type Seniority = "junior" | "mid" | "senior" | "lead" | "principal" | "unknown";
+
+export interface CvProfile {
+  skills: string[];
+  years_experience: number | null;
+  seniority: Seniority;
+  titles: string[];
+  domains: string[];
+  education: string[];
+  languages: string[];
+  summary: string;
+}
+
+export interface CvProfileResponse {
+  profile: CvProfile;
+  updated_at: string | null;
+}
+
 // Caps must match app/schemas/profile.py and app/schemas/filter.py.
 export const FILTER_TEXT_MAX = 200;
 export const PROFILE_NAME_MAX = 50;
@@ -226,6 +280,10 @@ export type ExtensionMessage =
   | { type: "JOB_SCRAPED"; job: ScrapedJob; diagnostics?: DomDiagnosticsPayload }
   | { type: "REQUEST_EVALUATION"; job: ScrapedJob }
   | { type: "EVALUATION_READY"; job: ScrapedJob; response: EvaluateResponse }
+  // Fit arrives on its own message so it can paint after (or independently of)
+  // the filter checklist — progressive rendering. Fired alongside evaluation.
+  | { type: "FIT_READY"; job: ScrapedJob; response: EvaluateFitResponse }
+  | { type: "FIT_ERROR"; jobId: string; error: string; status?: number }
   | {
       type: "EVALUATION_ERROR";
       jobId: string;
@@ -246,5 +304,13 @@ export type ExtensionMessage =
 export interface StoredEvaluation {
   job: ScrapedJob;
   response: EvaluateResponse;
+  storedAt: number;
+}
+
+// Persisted "last fit" so the panel can paint the match meter instantly on
+// reopen, keyed by job so a stale fit for a different job is ignored.
+export interface StoredFit {
+  jobId: string;
+  response: EvaluateFitResponse;
   storedAt: number;
 }

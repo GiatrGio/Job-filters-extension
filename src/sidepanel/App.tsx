@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, CircleArrowUp, HelpCircle, ListChecks, RefreshCw, Search, Wrench } from "lucide-react";
 import type {
+  EvaluateFitResponse,
   ExtensionMessage,
   FilterProfileWithFilters,
   MeResponse,
@@ -9,10 +10,16 @@ import type {
 } from "@/shared/types";
 import { DEFAULT_WARNING_THRESHOLD } from "@/shared/types";
 import { api, ApiError } from "@/lib/api";
-import { getLastEvaluation, getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
+import {
+  getLastEvaluation,
+  getLastFit,
+  getOnboardingFlag,
+  setOnboardingFlag,
+} from "@/lib/storage";
 import { getAccessToken, SUPABASE_AUTH_STORAGE_KEY } from "@/lib/auth";
 import { openHowItWorks } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
+import { JobFitWidget } from "./components/JobFitWidget";
 import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
 import { CompanyResearchLinks } from "./components/CompanyResearchLinks";
 
@@ -26,6 +33,15 @@ type Status =
   | { kind: "ready"; evaluation: StoredEvaluation; cached: boolean }
   | { kind: "scrape_failed"; jobId: string }
   | { kind: "error"; message: string; status?: number; plan?: string; usage?: UsageOut };
+
+// Fit is tracked separately from the evaluation Status because it arrives on
+// its own message (progressive rendering). Each variant carries the jobId so a
+// fit for a stale job is never shown against the current one.
+type FitState =
+  | { kind: "idle" }
+  | { kind: "loading"; jobId: string }
+  | { kind: "ready"; jobId: string; response: EvaluateFitResponse }
+  | { kind: "error"; jobId: string };
 
 function usageOutgrewKnownFreeSnapshot(
   nextUsage: UsageOut | null | undefined,
@@ -46,6 +62,7 @@ function isProEvaluationPlan(
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [fitState, setFitState] = useState<FitState>({ kind: "idle" });
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [profiles, setProfiles] = useState<FilterProfileWithFilters[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
@@ -178,14 +195,19 @@ export default function App() {
     connectPort();
 
     void (async () => {
-      const [last, coachDismissed] = await Promise.all([
+      const [last, lastFit, coachDismissed] = await Promise.all([
         getLastEvaluation(),
+        getLastFit(),
         getOnboardingFlag("coachMarksDismissed"),
       ]);
       setCoachMarksEligible(!coachDismissed);
       if (last) {
         setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
         setUsage(last.response.usage);
+        // Only restore the stored fit if it belongs to the same job.
+        if (lastFit && lastFit.jobId === last.job.linkedin_job_id) {
+          setFitState({ kind: "ready", jobId: lastFit.jobId, response: lastFit.response });
+        }
       }
       await syncAuthState();
     })();
@@ -194,6 +216,15 @@ export default function App() {
       if (msg.type === "JOB_SCRAPED") {
         setTrackedJobLimit(null);
         setStatus({ kind: "loading", jobId: msg.job.linkedin_job_id });
+        setFitState({ kind: "loading", jobId: msg.job.linkedin_job_id });
+      } else if (msg.type === "FIT_READY") {
+        setFitState({
+          kind: "ready",
+          jobId: msg.job.linkedin_job_id,
+          response: msg.response,
+        });
+      } else if (msg.type === "FIT_ERROR") {
+        setFitState({ kind: "error", jobId: msg.jobId });
       } else if (msg.type === "EVALUATION_READY") {
         setTrackedJobLimit(null);
         setStatus({
@@ -387,6 +418,15 @@ export default function App() {
 
     const { evaluation, cached } = status;
     const { job, response } = evaluation;
+    // Resolve the fit widget's state against THIS job. Anything other than a
+    // matching ready/error result reads as "still loading" → shimmer.
+    const fitForJob =
+      fitState.kind === "ready" && fitState.jobId === job.linkedin_job_id
+        ? fitState.response
+        : null;
+    const fitErrored =
+      fitState.kind === "error" && fitState.jobId === job.linkedin_job_id;
+    const fitLoading = !fitForJob && !fitErrored;
     return (
       <div className="p-4">
         <div className="mb-3">
@@ -411,6 +451,16 @@ export default function App() {
           </div>
           <CompanyResearchLinks company={job.job_company} />
         </div>
+
+        <div className="mb-4">
+          <JobFitWidget
+            loading={fitLoading}
+            response={fitForJob}
+            errored={fitErrored}
+            onOpenOptions={openOptions}
+          />
+        </div>
+
         {response.results.length === 0 ? (
           <div className="text-sm text-muted-foreground">
             You haven't configured any filters yet.{" "}

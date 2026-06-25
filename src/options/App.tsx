@@ -35,6 +35,7 @@ import type { Provider } from "@supabase/supabase-js";
 import { api, ApiError } from "@/lib/api";
 import { getSupabase, signInWithOAuth, signOut } from "@/lib/auth";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
+import { CvPanel } from "./CvPanel";
 import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import {
   FILTER_TEXT_MAX,
@@ -1552,6 +1553,7 @@ export default function App() {
         <>
           <HowItWorksStrip />
           <ProfilesEditor />
+          <CvPanel />
         </>
       ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
