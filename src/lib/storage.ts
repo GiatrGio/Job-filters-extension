@@ -1,7 +1,8 @@
-import type { StoredEvaluation, StoredFit } from "@/shared/types";
+import type { StoredCoverLetter, StoredEvaluation, StoredFit } from "@/shared/types";
 
 const LAST_EVAL_KEY = "lastEvaluation";
 const LAST_FIT_KEY = "lastFit";
+const LAST_COVER_LETTER_KEY = "lastCoverLetter";
 
 export async function getLastEvaluation(): Promise<StoredEvaluation | null> {
   const r = await chrome.storage.local.get(LAST_EVAL_KEY);
@@ -19,6 +20,18 @@ export async function getLastFit(): Promise<StoredFit | null> {
 
 export async function setLastFit(value: StoredFit): Promise<void> {
   await chrome.storage.local.set({ [LAST_FIT_KEY]: value });
+}
+
+// Last generated cover letter (the prose, possibly edited). Cached so re-opening
+// a job re-displays it without spending another generation; the letter is never
+// stored server-side. Keyed by job — a stale letter for another job is ignored.
+export async function getLastCoverLetter(): Promise<StoredCoverLetter | null> {
+  const r = await chrome.storage.local.get(LAST_COVER_LETTER_KEY);
+  return (r[LAST_COVER_LETTER_KEY] as StoredCoverLetter) ?? null;
+}
+
+export async function setLastCoverLetter(value: StoredCoverLetter): Promise<void> {
+  await chrome.storage.local.set({ [LAST_COVER_LETTER_KEY]: value });
 }
 
 // Onboarding flags. Each is a boolean we flip to true once dismissed; absent

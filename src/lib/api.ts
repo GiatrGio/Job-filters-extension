@@ -3,6 +3,10 @@ import { getAccessToken } from "./auth";
 import type {
   Application,
   ApplicationCreate,
+  CoverLetterInstructionsValidationRequest,
+  CoverLetterInstructionsValidationResponse,
+  CoverLetterSettings,
+  CoverLetterSettingsResponse,
   CvProfile,
   CvProfileResponse,
   DomDiagnosticsPayload,
@@ -18,6 +22,7 @@ import type {
   FilterUpdate,
   FilterValidationRequest,
   FilterValidationResponse,
+  GenerateCoverLetterResponse,
   MeResponse,
   ReorderRequest,
 } from "@/shared/types";
@@ -134,6 +139,30 @@ export const api = {
     }),
 
   deleteCv: () => request<void>("/cv", { method: "DELETE" }),
+
+  // --- cover letter ---------------------------------------------------------
+  getCoverLetterSettings: () =>
+    request<CoverLetterSettingsResponse>("/cover-letter/settings"),
+
+  updateCoverLetterSettings: (settings: CoverLetterSettings) =>
+    request<CoverLetterSettingsResponse>("/cover-letter/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+
+  validateCoverLetterInstructions: (body: CoverLetterInstructionsValidationRequest) =>
+    request<CoverLetterInstructionsValidationResponse>(
+      "/cover-letter/settings/validate-instructions",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  // On-demand generation. Reuses EvaluateRequest (a JobInput) like evaluateFit;
+  // consumes the monthly cover-letter quota on success (402 when exhausted).
+  generateCoverLetter: (body: EvaluateRequest) =>
+    request<GenerateCoverLetterResponse>("/generate-cover-letter", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   me: () => request<MeResponse>("/me"),
 

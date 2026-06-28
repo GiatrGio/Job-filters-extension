@@ -17,10 +17,11 @@ import {
   setOnboardingFlag,
 } from "@/lib/storage";
 import { getAccessToken, SUPABASE_AUTH_STORAGE_KEY } from "@/lib/auth";
-import { openHowItWorks } from "@/lib/links";
+import { openHowItWorks, openOptionsAt } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
 import { JobFitWidget } from "./components/JobFitWidget";
 import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
+import { CoverLetterButton } from "./components/CoverLetterButton";
 import { CompanyResearchLinks } from "./components/CompanyResearchLinks";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
@@ -434,15 +435,18 @@ export default function App() {
             <div className="text-xs uppercase tracking-wide text-muted-foreground">
               {cached ? "Cached" : "Fresh"} evaluation
             </div>
-            <div className="relative">
-              <TrackJobButton job={job} onLimitExceeded={setTrackedJobLimit} />
-              {coachMarksVisible && (
-                <CoachBubble
-                  title="Save jobs you like"
-                  body="Click here to add this job to your tracker — change status, add notes on the website."
-                  onDismiss={dismissCoachMarks}
-                />
-              )}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <CoverLetterButton job={job} />
+              <div className="relative">
+                <TrackJobButton job={job} onLimitExceeded={setTrackedJobLimit} />
+                {coachMarksVisible && (
+                  <CoachBubble
+                    title="Save jobs you like"
+                    body="Click here to add this job to your tracker — change status, add notes on the website."
+                    onDismiss={dismissCoachMarks}
+                  />
+                )}
+              </div>
             </div>
           </div>
           <div className="mt-1 text-base font-medium text-foreground">{job.job_title ?? "Job"}</div>
@@ -457,7 +461,7 @@ export default function App() {
             loading={fitLoading}
             response={fitForJob}
             errored={fitErrored}
-            onOpenOptions={openOptions}
+            onOpenOptions={() => openOptionsAt("fit")}
           />
         </div>
 

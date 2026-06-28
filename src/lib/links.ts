@@ -30,6 +30,16 @@ function openCompanySearch(
   openTab(url.toString());
 }
 
+// Open the extension's options page on a specific settings tab. We stash the
+// desired tab in storage and call openOptionsPage() (which reliably focuses an
+// existing options tab) rather than building a getURL()+hash, whose path is not
+// stable across dev/prod bundling. The options page reads + clears the key.
+export function openOptionsAt(tab: "filters" | "fit" | "cover"): void {
+  void chrome.storage.local.set({ pendingOptionsTab: tab }).then(() => {
+    chrome.runtime.openOptionsPage?.();
+  });
+}
+
 export function openPricing(): void {
   openTab(`${ENV.WEB_URL}/pricing`);
 }

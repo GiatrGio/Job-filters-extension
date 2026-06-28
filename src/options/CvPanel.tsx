@@ -308,9 +308,9 @@ export function CvPanel() {
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
           <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
           <span>
-            We never store your CV file or personal details. We parse it once and keep only a
-            non-identifying professional summary (skills, experience, domains) — no name, email, or
-            phone number. You can edit anything below.
+            We never store your CV file. From it we keep only a non-identifying professional
+            summary (skills, experience, domains) — not your name, email, or phone number. You can
+            edit anything below.
           </span>
         </div>
 

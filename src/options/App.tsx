@@ -24,10 +24,12 @@ import {
   Lightbulb,
   ListChecks,
   Loader2,
+  PenLine,
   Plus,
   Search,
   ShieldAlert,
   Star,
+  Target,
   Trash2,
   X,
 } from "lucide-react";
@@ -36,6 +38,7 @@ import { api, ApiError } from "@/lib/api";
 import { getSupabase, signInWithOAuth, signOut } from "@/lib/auth";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/storage";
 import { CvPanel } from "./CvPanel";
+import { CoverLetterPanel } from "./CoverLetterPanel";
 import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import {
   FILTER_TEXT_MAX,
@@ -1536,11 +1539,78 @@ function FilterCard({
 }
 
 // ---------------------------------------------------------------------------
+// Settings tabs
+// ---------------------------------------------------------------------------
+
+type SettingsTab = "filters" | "fit" | "cover";
+
+const SETTINGS_TABS: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
+  { id: "filters", label: "Job filters", icon: ListChecks },
+  { id: "fit", label: "Job fit", icon: Target },
+  { id: "cover", label: "Cover letter", icon: PenLine },
+];
+
+// Initial tab from the URL hash (e.g. options.html#cover), so the side panel's
+// "set this up" nudges can deep-link straight to the relevant section.
+function hashToTab(): SettingsTab {
+  const h = window.location.hash.replace("#", "");
+  return SETTINGS_TABS.some((t) => t.id === h) ? (h as SettingsTab) : "filters";
+}
+
+function SettingsTabs({
+  active,
+  onChange,
+}: {
+  active: SettingsTab;
+  onChange: (t: SettingsTab) => void;
+}) {
+  return (
+    <div className="border-b bg-background">
+      <nav className="mx-auto flex max-w-6xl gap-1 px-6" aria-label="Settings sections">
+        {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            aria-current={active === id ? "page" : undefined}
+            className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+              active === id
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icon size={16} aria-hidden="true" /> {label}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App shell
 // ---------------------------------------------------------------------------
 
 export default function App() {
   const { email, loading } = useSession();
+  const [tab, setTab] = useState<SettingsTab>(() => hashToTab());
+
+  function changeTab(t: SettingsTab) {
+    setTab(t);
+    window.location.hash = t;
+  }
+
+  // Honor a deep-link from the side panel (openOptionsAt) — it stashes the
+  // desired tab in storage because openOptionsPage() can't carry a hash.
+  useEffect(() => {
+    void chrome.storage.local.get("pendingOptionsTab").then((r) => {
+      const pending = r.pendingOptionsTab as string | undefined;
+      if (pending && SETTINGS_TABS.some((t) => t.id === pending)) {
+        changeTab(pending as SettingsTab);
+        void chrome.storage.local.remove("pendingOptionsTab");
+      }
+    });
+  }, []);
 
   if (loading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -1551,9 +1621,15 @@ export default function App() {
       <Header email={email} />
       {email ? (
         <>
-          <HowItWorksStrip />
-          <ProfilesEditor />
-          <CvPanel />
+          <SettingsTabs active={tab} onChange={changeTab} />
+          {tab === "filters" && (
+            <>
+              <HowItWorksStrip />
+              <ProfilesEditor />
+            </>
+          )}
+          {tab === "fit" && <CvPanel />}
+          {tab === "cover" && <CoverLetterPanel />}
         </>
       ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">

@@ -173,6 +173,8 @@ export interface MeResponse {
   email: string;
   plan: string;
   usage: UsageOut;
+  // Monthly cover-letter generation meter (separate from job evaluations).
+  cover_letters: UsageOut;
 }
 
 // Filter quality validation. The backend classifies a single user-supplied
@@ -192,6 +194,66 @@ export interface FilterValidationResponse {
   // flow can persist the right kind without a second classification.
   kind: FilterKind;
   usage: UsageOut;
+}
+
+// --- Cover letter ----------------------------------------------------------
+// Mirrors app/schemas/cover_letter.py. The generated letter is NEVER stored
+// server-side — it's returned here and cached client-side (StoredCoverLetter).
+// The identity block IS stored server-side (the user's choice); only
+// `instructions` reaches the LLM. The header/signature are composed
+// client-side from the identity fields, which can be pre-filled from the CV.
+export const COVER_LETTER_INSTRUCTIONS_MAX = 2000;
+export const COVER_LETTER_FULL_NAME_MAX = 120;
+export const COVER_LETTER_EMAIL_MAX = 160;
+export const COVER_LETTER_PHONE_MAX = 40;
+export const COVER_LETTER_LOCATION_MAX = 160;
+
+export interface CoverLetterSettings {
+  // Single block: how the letter should read + any achievements to emphasize.
+  instructions: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  location: string;
+}
+
+export interface CoverLetterSettingsResponse {
+  settings: CoverLetterSettings;
+  updated_at: string | null;
+}
+
+export interface CoverLetterContent {
+  greeting: string;
+  body_paragraphs: string[];
+  closing: string;
+}
+
+export interface GenerateCoverLetterResponse {
+  // false when the user has no CV / no name yet → the side panel nudges to
+  // settings instead of spending a generation. `letter` is null in that case.
+  has_cv: boolean;
+  has_identity: boolean;
+  letter: CoverLetterContent | null;
+  usage: UsageOut;
+}
+
+export interface CoverLetterInstructionsValidationRequest {
+  text: string;
+}
+
+export interface CoverLetterInstructionsValidationResponse {
+  verdict: FilterValidationVerdict;
+  reason: string;
+  suggestion: string | null;
+  usage: UsageOut;
+}
+
+// Persisted last cover letter so re-opening a job shows it (and the user's
+// edits) without spending another generation. Keyed by job, like StoredFit.
+export interface StoredCoverLetter {
+  jobId: string;
+  text: string;
+  storedAt: number;
 }
 
 // Tracker — mirrors app/schemas/application.py on the backend. Kept in sync
