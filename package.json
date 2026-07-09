@@ -8,6 +8,7 @@
     "dev": "vite",
     "build:dev": "tsc --noEmit && vite build --mode development",
     "build": "tsc --noEmit && vite build",
+    "package": "bash scripts/package-extension.sh",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
