@@ -7,3 +7,6 @@ dist/
 .idea/
 .vscode/
 *.log
+
+# Packaged Chrome Web Store uploads (produced by npm run package)
+*.zip
