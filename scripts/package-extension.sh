@@ -40,6 +40,29 @@ if [[ "$manifest_count" != "1" ]]; then
   exit 1
 fi
 
+# Guard against shipping a *development* build. When Vite/CRXJS runs in dev mode
+# it writes a dist/ whose service worker and content scripts `import` code from
+# the local dev server (http://localhost:5173/@vite/env, /@crx/client, ...).
+# Uploading that gets rejected for "Including remotely hosted code in a Manifest
+# V3 item." Fail loudly here instead of at the Chrome Web Store.
+#
+# We scan every packaged file (skipping source maps, which are excluded from the
+# zip anyway) for the unambiguous dev-server / remote-import markers. Runtime API
+# URLs like https://api.canvasjob.com are fine — those are fetch() targets, not
+# code imports — so we deliberately do NOT flag bare https:// strings.
+remote_hits="$(
+  grep -rlaE "localhost:5173|/@vite/|/@crx/client|from[[:space:]]*['\"]https?://|import[[:space:](]*['\"]https?://" "$DIST_DIR" \
+    --exclude='*.map' 2>/dev/null || true
+)"
+if [[ -n "$remote_hits" ]]; then
+  echo "ERROR: dist/ contains remotely hosted / dev-server code. This is a" >&2
+  echo "       development build and will be rejected by the Chrome Web Store." >&2
+  echo "       Rebuild for production (npm run build) before packaging." >&2
+  echo "       Offending files:" >&2
+  echo "$remote_hits" | sed 's/^/         /' >&2
+  exit 1
+fi
+
 # Name the archive after the version Chrome actually reads (the manifest),
 # not package.json, so the filename never lies about what is inside.
 NAME="$(node -p "require('$DIST_DIR/manifest.json').name" | tr ' ' '-')"
