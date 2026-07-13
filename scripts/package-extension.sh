@@ -47,11 +47,11 @@ fi
 # V3 item." Fail loudly here instead of at the Chrome Web Store.
 #
 # We scan every packaged file (skipping source maps, which are excluded from the
-# zip anyway) for the unambiguous dev-server / remote-import markers. Runtime API
+# zip anyway) for dev-server imports and code-loading constructs. Runtime API
 # URLs like https://api.canvasjob.com are fine — those are fetch() targets, not
-# code imports — so we deliberately do NOT flag bare https:// strings.
+# executable code — but a remote .js URL or dynamic <script> is never allowed.
 remote_hits="$(
-  grep -rlaE "localhost:5173|/@vite/|/@crx/client|from[[:space:]]*['\"]https?://|import[[:space:](]*['\"]https?://" "$DIST_DIR" \
+  grep -rlaE "localhost:5173|/@vite/|/@crx/client|from[[:space:]]*['\"]https?://|import[[:space:](]*['\"]https?://|importScripts[[:space:]]*\(|createElement\([[:space:]]*['\"]script['\"]\)|<script[^>]*src=['\"][[:space:]]*https?://|https?://[^\"'[:space:]<>]+\.m?js([?#\"'[:space:]<>]|$)|pdfobjectnewwindow|pdfObjectUrl" "$DIST_DIR" \
     --exclude='*.map' 2>/dev/null || true
 )"
 if [[ -n "$remote_hits" ]]; then

@@ -207,6 +207,7 @@ export const COVER_LETTER_FULL_NAME_MAX = 120;
 export const COVER_LETTER_EMAIL_MAX = 160;
 export const COVER_LETTER_PHONE_MAX = 40;
 export const COVER_LETTER_LOCATION_MAX = 160;
+export const COVER_LETTER_PDF_TEXT_MAX = 20_000;
 
 export interface CoverLetterSettings {
   // Single block: how the letter should read + any achievements to emphasize.
@@ -235,6 +236,11 @@ export interface GenerateCoverLetterResponse {
   has_identity: boolean;
   letter: CoverLetterContent | null;
   usage: UsageOut;
+}
+
+export interface CoverLetterPdfRequest {
+  text: string;
+  company?: string | null;
 }
 
 export interface CoverLetterInstructionsValidationRequest {

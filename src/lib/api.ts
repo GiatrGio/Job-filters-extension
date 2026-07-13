@@ -5,6 +5,7 @@ import type {
   ApplicationCreate,
   CoverLetterInstructionsValidationRequest,
   CoverLetterInstructionsValidationResponse,
+  CoverLetterPdfRequest,
   CoverLetterSettings,
   CoverLetterSettingsResponse,
   CvProfile,
@@ -38,21 +39,22 @@ export class ApiError extends Error {
   }
 }
 
-async function parseResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    // Read once as text, then try to parse as JSON. Calling res.json()
-    // first and falling back to res.text() throws "body stream already read"
-    // because the stream is consumed on the first call even when parsing
-    // fails.
-    const raw = await res.text();
-    let body: unknown = raw;
-    try {
-      body = JSON.parse(raw);
-    } catch {
-      // not JSON — fall through with the raw text
-    }
-    throw new ApiError(res.status, errorMessageFromBody(body, res.statusText), body);
+async function throwApiError(res: Response): Promise<never> {
+  // Read once as text, then try to parse as JSON. Calling res.json()
+  // first and falling back to res.text() throws "body stream already read"
+  // because the stream is consumed on the first call even when parsing fails.
+  const raw = await res.text();
+  let body: unknown = raw;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    // not JSON — fall through with the raw text
   }
+  throw new ApiError(res.status, errorMessageFromBody(body, res.statusText), body);
+}
+
+async function parseResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) return throwApiError(res);
 
   // DELETE endpoints return 204 with no body.
   if (res.status === 204) return undefined as T;
@@ -72,6 +74,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   return parseResponse<T>(res);
+}
+
+export interface FileDownload {
+  blob: Blob;
+  filename: string | null;
+}
+
+function filenameFromDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const match = /filename="([^"]+)"/i.exec(value);
+  return match?.[1] ?? null;
+}
+
+async function requestBlob(path: string, init: RequestInit = {}): Promise<FileDownload> {
+  const token = await getAccessToken();
+  if (!token) throw new ApiError(401, "not signed in");
+
+  const res = await fetch(`${ENV.API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) return throwApiError(res);
+  return {
+    blob: await res.blob(),
+    filename: filenameFromDisposition(res.headers.get("Content-Disposition")),
+  };
 }
 
 // Multipart upload (CV file). Deliberately does NOT set Content-Type — the
@@ -160,6 +192,15 @@ export const api = {
   // consumes the monthly cover-letter quota on success (402 when exhausted).
   generateCoverLetter: (body: EvaluateRequest) =>
     request<GenerateCoverLetterResponse>("/generate-cover-letter", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // Render the final user-edited text in memory on the backend. This is a
+  // separate, quota-free operation from AI generation and returns PDF data,
+  // never executable code.
+  createCoverLetterPdf: (body: CoverLetterPdfRequest) =>
+    requestBlob("/cover-letter/pdf", {
       method: "POST",
       body: JSON.stringify(body),
     }),

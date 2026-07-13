@@ -21,6 +21,7 @@ import type {
   ScrapedJob,
   UsageOut,
 } from "@/shared/types";
+import { COVER_LETTER_PDF_TEXT_MAX } from "@/shared/types";
 
 // Compose the editable letter text from the identity block (header + signature,
 // added client-side) and the generated prose. The user can freely edit the
@@ -46,41 +47,18 @@ function composeLetter(s: CoverLetterSettings, letter: CoverLetterContent): stri
   return blocks.join("\n\n");
 }
 
-// Render the (possibly edited) plain-text letter to a simple, clean A4 PDF.
-// jsPDF is pure JS (runs in the side panel, no backend) and is imported
-// dynamically so its ~150KB only loads when the user actually downloads.
+// Ask the backend to render the final, possibly edited text entirely in memory,
+// then download the returned PDF bytes. The backend never stores the text/PDF.
 async function downloadPdf(text: string, company: string | null): Promise<void> {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const margin = 56;
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const maxWidth = pageWidth - margin * 2;
-  const lineHeight = 16;
-  doc.setFont("times", "normal");
-  doc.setFontSize(11);
-
-  let y = margin;
-  for (const rawLine of text.split("\n")) {
-    if (rawLine.trim() === "") {
-      y += lineHeight;
-      continue;
-    }
-    for (const line of doc.splitTextToSize(rawLine, maxWidth) as string[]) {
-      if (y > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
-      }
-      doc.text(line, margin, y);
-      y += lineHeight;
-    }
-  }
-
-  const safeCompany = (company ?? "")
-    .replace(/[^\w\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
-  doc.save(`Cover-Letter${safeCompany ? `-${safeCompany}` : ""}.pdf`);
+  const { blob, filename } = await api.createCoverLetterPdf({ text, company });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename ?? "Cover-Letter.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 function parseQuota(err: ApiError): { plan: string | null; usage: UsageOut | null } {
@@ -125,6 +103,8 @@ function CoverLetterSheet({ job, onClose }: { job: ScrapedJob; onClose: () => vo
   const [usage, setUsage] = useState<UsageOut | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmingRegen, setConfirmingRegen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Persist the current (edited) letter so reopening the job shows it for free.
   function cache(next: string) {
@@ -223,6 +203,19 @@ function CoverLetterSheet({ job, onClose }: { job: ScrapedJob; onClose: () => vo
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard can be blocked; ignore — Download is the primary path.
+    }
+  }
+
+  async function download() {
+    cache(text);
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadPdf(text, job.job_company);
+    } catch (err) {
+      setDownloadError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -363,23 +356,28 @@ function CoverLetterSheet({ job, onClose }: { job: ScrapedJob; onClose: () => vo
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
+              maxLength={COVER_LETTER_PDF_TEXT_MAX}
               rows={18}
               className="w-full resize-y rounded-md border border-input bg-background p-3 text-sm leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring/20"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Edit freely — changes here only affect the PDF, they aren't saved on our servers.
+              Edit freely — the final text is sent securely for PDF rendering only when you
+              download, and neither the text nor PDF is stored on our servers.
             </p>
 
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  cache(text);
-                  void downloadPdf(text, job.job_company);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                onClick={() => void download()}
+                disabled={downloading}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
-                <Download size={14} aria-hidden="true" /> Download PDF
+                {downloading ? (
+                  <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download size={14} aria-hidden="true" />
+                )}
+                {downloading ? "Preparing PDF…" : "Download PDF"}
               </button>
               <button
                 type="button"
@@ -390,6 +388,9 @@ function CoverLetterSheet({ job, onClose }: { job: ScrapedJob; onClose: () => vo
                 {copied ? "Copied" : "Copy"}
               </button>
             </div>
+            {downloadError && (
+              <p className="mt-2 text-xs text-destructive">Couldn't download: {downloadError}</p>
+            )}
 
             <div className="mt-3 border-t pt-3">
               {confirmingRegen ? (
