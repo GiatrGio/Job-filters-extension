@@ -17,8 +17,7 @@
 // next render.
 
 import { api, ApiError } from "@/lib/api";
-import { ENV } from "@/lib/env";
-import { setLastEvaluation, setLastFit } from "@/lib/storage";
+import { setLastEvaluation, setLastFit, setOnboardingComplete } from "@/lib/storage";
 import type {
   DomDiagnosticsPayload,
   ExtensionMessage,
@@ -241,14 +240,22 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // On install, make the side-panel button work on LinkedIn tabs by default,
-// and on a fresh install (not update / browser reload) open the website's
-// "How it works" anchor so the user gets the 30-second mental model before
-// they touch anything.
+// and on a fresh install (not update / browser reload) open the guided setup
+// wizard — sign in, define filters, add a CV, then land on LinkedIn — so the
+// user goes from "Add to Chrome" to a working extension without hunting for it.
 chrome.runtime.onInstalled.addListener((details) => {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch(() => {});
   if (details.reason === "install") {
-    chrome.tabs.create({ url: `${ENV.WEB_URL}/#how-it-works`, active: true }).catch(() => {});
+    // Write the flag before opening so the options page reads `false` and
+    // renders the wizard on first paint.
+    void setOnboardingComplete(false).then(() => {
+      chrome.runtime.openOptionsPage?.();
+    });
+  } else if (details.reason === "update") {
+    // Existing users have already set up filters — never surface the first-run
+    // wizard on an extension update.
+    void setOnboardingComplete(true);
   }
 });

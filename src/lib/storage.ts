@@ -34,6 +34,25 @@ export async function setLastCoverLetter(value: StoredCoverLetter): Promise<void
   await chrome.storage.local.set({ [LAST_COVER_LETTER_KEY]: value });
 }
 
+// First-run onboarding wizard. This is a completion flag, distinct from the
+// dismissal flags below: it gates whether the options page shows the guided
+// setup wizard instead of the normal settings UI.
+//
+// Semantics are deliberately fail-safe for existing users: absent → treated as
+// COMPLETE (skip the wizard). Only a fresh install writes an explicit `false`
+// (see background onInstalled) to open the wizard, so an extension update never
+// drops a set-up user back into onboarding even if the update handler is slow.
+const ONBOARDING_COMPLETE_KEY = "onboardingComplete";
+
+export async function getOnboardingComplete(): Promise<boolean> {
+  const r = await chrome.storage.local.get(ONBOARDING_COMPLETE_KEY);
+  return r[ONBOARDING_COMPLETE_KEY] !== false;
+}
+
+export async function setOnboardingComplete(value: boolean): Promise<void> {
+  await chrome.storage.local.set({ [ONBOARDING_COMPLETE_KEY]: value });
+}
+
 // Onboarding flags. Each is a boolean we flip to true once dismissed; absent
 // or false means the affected UI is still in its first-time state.
 const ONBOARDING_FLAGS = [
