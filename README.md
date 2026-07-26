@@ -59,26 +59,29 @@ access limited to canvasjob's configured services rather than every Supabase
 project. Production builds fail if the API URL points at localhost, so a
 store ZIP cannot accidentally request local development access.
 
-## Chrome Web Store beta build
+## Chrome Web Store build
 
-The production override currently points at the deployed Fly.io API and
-website:
+Production endpoints live in `.env.production.local` (Supabase keys come from
+`.env`):
 
 ```env
-VITE_API_URL=https://job-filters-backend.fly.dev
+VITE_API_URL=https://api.canvasjob.com
 VITE_WEB_URL=https://www.canvasjob.com
 ```
 
-Create an uploadable build with:
+Bump `version` in `manifest.json` **and** `package.json`, then create an
+uploadable build with:
 
 ```bash
-npm run build
-cd dist
-zip -r ../canvasjob-beta-0.1.0.zip .
+npm run package
 ```
 
-Before publishing a later update, increment `version` in `manifest.json`.
-After the Chrome Web Store assigns the beta extension ID, add
+This runs a production build and writes `canvasjob-<version>.zip` to the project
+root, guarding against dev / remotely-hosted-code builds that the store rejects.
+See **[PACKAGING.md](PACKAGING.md)** for the full step-by-step (version bump →
+package → upload).
+
+After the Chrome Web Store assigns the extension ID, add
 `chrome-extension://<extension-id>` to the deployed backend CORS allowlist.
 
 Also add the extension OAuth callback to Supabase:
