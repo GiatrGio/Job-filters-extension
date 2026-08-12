@@ -58,7 +58,6 @@ export async function setOnboardingComplete(value: boolean): Promise<void> {
 const ONBOARDING_FLAGS = [
   "starterBannerDismissed",
   "howItWorksDismissed",
-  "coachMarksDismissed",
 ] as const;
 export type OnboardingFlag = (typeof ONBOARDING_FLAGS)[number];
 
@@ -69,4 +68,21 @@ export async function getOnboardingFlag(key: OnboardingFlag): Promise<boolean> {
 
 export async function setOnboardingFlag(key: OnboardingFlag, value: boolean): Promise<void> {
   await chrome.storage.local.set({ [key]: value });
+}
+
+// Side panel coach-mark tour. We persist the ids the user has clicked through
+// rather than one "dismissed" boolean, so the tour resumes at the right step
+// when the panel is closed part-way and a mark added for a new feature only
+// shows that mark. Supersedes the old `coachMarksDismissed` flag, whose value
+// is deliberately ignored — the tour was re-sequenced, so everyone sees it once.
+const COACH_MARKS_SEEN_KEY = "coachMarksSeen";
+
+export async function getSeenCoachMarks(): Promise<string[]> {
+  const r = await chrome.storage.local.get(COACH_MARKS_SEEN_KEY);
+  const stored = r[COACH_MARKS_SEEN_KEY];
+  return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+}
+
+export async function setSeenCoachMarks(ids: string[]): Promise<void> {
+  await chrome.storage.local.set({ [COACH_MARKS_SEEN_KEY]: ids });
 }

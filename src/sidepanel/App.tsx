@@ -13,8 +13,8 @@ import { api, ApiError } from "@/lib/api";
 import {
   getLastEvaluation,
   getLastFit,
-  getOnboardingFlag,
-  setOnboardingFlag,
+  getSeenCoachMarks,
+  setSeenCoachMarks,
 } from "@/lib/storage";
 import { getAccessToken, SUPABASE_AUTH_STORAGE_KEY } from "@/lib/auth";
 import { openHowItWorks, openOptionsAt } from "@/lib/links";
@@ -43,6 +43,35 @@ type FitState =
   | { kind: "loading"; jobId: string }
   | { kind: "ready"; jobId: string; response: EvaluateFitResponse }
   | { kind: "error"; jobId: string };
+
+// The first-run tour, shown one bubble at a time on the first evaluation.
+// Ordered the way the panel reads top-to-bottom, so clicking "Got it" walks the
+// eye down the page. A step is skipped when the control it points at isn't on
+// screen (see `coachSteps` below).
+type CoachMarkId = "coverLetter" | "trackJob" | "fit" | "profiles";
+
+export const COACH_MARKS: { id: CoachMarkId; title: string; body: string }[] = [
+  {
+    id: "coverLetter",
+    title: "Cover letter in one click",
+    body: "Write a letter tailored to this job from your CV — edit it here, then download the PDF.",
+  },
+  {
+    id: "trackJob",
+    title: "Save jobs you like",
+    body: "Click here to add this job to your tracker — change status, add notes on the website.",
+  },
+  {
+    id: "fit",
+    title: "Your match",
+    body: "A 1–5 score showing how your CV lines up with this job, plus the strengths and gaps behind it.",
+  },
+  {
+    id: "profiles",
+    title: "Multiple job searches?",
+    body: "Switch your active filter profile here — each profile has its own set of filters.",
+  },
+];
 
 function usageOutgrewKnownFreeSnapshot(
   nextUsage: UsageOut | null | undefined,
@@ -79,10 +108,10 @@ export default function App() {
   // to /me's session-start snapshot.
   const [usage, setUsage] = useState<UsageOut | null>(null);
   const [trackedJobLimit, setTrackedJobLimit] = useState<TrackedJobLimitInfo | null>(null);
-  // Coach-marks lifecycle: null = unknown (still loading the persisted
-  // dismissal flag), false = already dismissed (never show again), true =
-  // eligible — shown whenever there's a ready evaluation.
-  const [coachMarksEligible, setCoachMarksEligible] = useState<boolean | null>(null);
+  // Coach-marks progress: null = unknown (still loading it from storage),
+  // otherwise the ids already clicked through. The tour shows the first unseen
+  // step and ends when every id is in here.
+  const [seenMarks, setSeenMarks] = useState<CoachMarkId[] | null>(null);
 
   function applyMeSnapshot(snapshot: MeResponse) {
     setMe(snapshot);
@@ -196,12 +225,14 @@ export default function App() {
     connectPort();
 
     void (async () => {
-      const [last, lastFit, coachDismissed] = await Promise.all([
+      const [last, lastFit, seen] = await Promise.all([
         getLastEvaluation(),
         getLastFit(),
-        getOnboardingFlag("coachMarksDismissed"),
+        getSeenCoachMarks(),
       ]);
-      setCoachMarksEligible(!coachDismissed);
+      // Normalise against the current step list so a removed/renamed id in
+      // storage can't stall the tour on a step that no longer exists.
+      setSeenMarks(COACH_MARKS.filter((m) => seen.includes(m.id)).map((m) => m.id));
       if (last) {
         setStatus({ kind: "ready", evaluation: last, cached: last.response.cached });
         setUsage(last.response.usage);
@@ -299,16 +330,42 @@ export default function App() {
     chrome.runtime.openOptionsPage?.();
   }
 
-  async function dismissCoachMarks() {
-    setCoachMarksEligible(false);
-    await setOnboardingFlag("coachMarksDismissed", true);
+  async function markSeen(ids: CoachMarkId[]) {
+    setSeenMarks(ids);
+    await setSeenCoachMarks(ids);
   }
 
-  // Show coach marks whenever the user is eligible (not yet dismissed) and
-  // there's something to point at (a ready evaluation). Covers both the
-  // "fresh evaluation just arrived" and "panel opened with a stored eval"
-  // paths.
-  const coachMarksVisible = coachMarksEligible === true && status.kind === "ready";
+  // The tour runs whenever there's something to point at (a ready evaluation)
+  // and we know how far the user already got — covering both the "fresh
+  // evaluation just arrived" and "panel opened with a stored eval" paths. Steps
+  // are dropped when their control isn't rendered: the profile selector only
+  // exists once profiles have loaded, and counting it would promise a bubble
+  // that never comes.
+  const coachSteps =
+    status.kind === "ready" && seenMarks !== null
+      ? COACH_MARKS.filter(
+          (m) => m.id !== "profiles" || (signedIn === true && profiles.length > 0),
+        )
+      : [];
+  const activeCoachIndex = coachSteps.findIndex((m) => !seenMarks?.includes(m.id));
+  const activeCoachMark = activeCoachIndex === -1 ? null : coachSteps[activeCoachIndex];
+
+  // Renders the bubble only when `id` is the step the user is currently on, so
+  // each anchor can ask for its own without knowing about the others.
+  function coachBubble(id: CoachMarkId, placement: "above" | "below" = "below") {
+    if (!activeCoachMark || activeCoachMark.id !== id) return null;
+    return (
+      <CoachBubble
+        title={activeCoachMark.title}
+        body={activeCoachMark.body}
+        step={activeCoachIndex + 1}
+        total={coachSteps.length}
+        onNext={() => void markSeen([...(seenMarks ?? []), activeCoachMark.id])}
+        onSkip={() => void markSeen(COACH_MARKS.map((m) => m.id))}
+        placement={placement}
+      />
+    );
+  }
 
   async function refreshFilters() {
     if (refreshingFilters) return;
@@ -436,16 +493,13 @@ export default function App() {
               {cached ? "Cached" : "Fresh"} evaluation
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <CoverLetterButton job={job} />
+              <div className="relative">
+                <CoverLetterButton job={job} />
+                {coachBubble("coverLetter")}
+              </div>
               <div className="relative">
                 <TrackJobButton job={job} onLimitExceeded={setTrackedJobLimit} />
-                {coachMarksVisible && (
-                  <CoachBubble
-                    title="Save jobs you like"
-                    body="Click here to add this job to your tracker — change status, add notes on the website."
-                    onDismiss={dismissCoachMarks}
-                  />
-                )}
+                {coachBubble("trackJob")}
               </div>
             </div>
           </div>
@@ -456,13 +510,14 @@ export default function App() {
           <CompanyResearchLinks company={job.job_company} />
         </div>
 
-        <div className="mb-4">
+        <div className="relative mb-4">
           <JobFitWidget
             loading={fitLoading}
             response={fitForJob}
             errored={fitErrored}
             onOpenOptions={() => openOptionsAt("fit")}
           />
+          {coachBubble("fit")}
         </div>
 
         {response.results.length === 0 ? (
@@ -555,14 +610,7 @@ export default function App() {
                   </option>
                 ))}
               </select>
-              {coachMarksVisible && (
-                <CoachBubble
-                  title="Multiple job searches?"
-                  body="Switch your active filter profile here — each profile has its own set of filters."
-                  onDismiss={dismissCoachMarks}
-                  placement="above"
-                />
-              )}
+              {coachBubble("profiles", "above")}
             </div>
           )}
         </div>
@@ -613,7 +661,13 @@ function TrackedJobLimitPage({
   limit?: number;
   onBack: () => void;
 }) {
-  const displayedLimit = limit ?? 5;
+  // The API sends the limit with its 402, so we normally name the number. If it
+  // ever arrives without one, say it without a figure rather than quoting a
+  // hardcoded limit that may no longer be what the server enforces.
+  const allowance =
+    limit === undefined
+      ? "You've filled every tracked-job slot the Free plan includes."
+      : `Free includes ${limit} tracked jobs at once.`;
   return (
     <div className="flex min-h-full flex-col justify-center p-4 text-sm">
       <div className="mx-auto w-full max-w-sm rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
@@ -624,8 +678,8 @@ function TrackedJobLimitPage({
           You&apos;ve reached the Free plan tracking limit
         </h2>
         <p className="mt-2 leading-relaxed text-muted-foreground">
-          Free includes {displayedLimit} tracked jobs at once. Remove a job from
-          your tracker to save another one during beta.
+          {allowance} Remove a job from your tracker to save another one during
+          beta.
         </p>
         <div className="mt-4 space-y-2">
           <button
@@ -647,17 +701,25 @@ function TrackedJobLimitPage({
   );
 }
 
-// One-time spotlight tooltip rendered next to a UI control (profile selector,
-// Track button) on the user's first successful evaluation.
+// One step of the first-run tour, rendered next to the control it describes
+// (the caller supplies a `relative` wrapper). Only one is on screen at a time:
+// "Got it" advances to the next, "Skip tutorial" ends the rest — and the
+// counter tells the user how much is left before they commit to either.
 function CoachBubble({
   title,
   body,
-  onDismiss,
+  step,
+  total,
+  onNext,
+  onSkip,
   placement = "below",
 }: {
   title: string;
   body: string;
-  onDismiss: () => void;
+  step: number;
+  total: number;
+  onNext: () => void;
+  onSkip: () => void;
   placement?: "above" | "below";
 }) {
   const positionClass = placement === "above" ? "bottom-full mb-2" : "top-full mt-2";
@@ -673,9 +735,20 @@ function CoachBubble({
       <div className={`absolute h-3 w-3 rotate-45 border-primary/30 bg-card ${arrowClass}`} />
       <div className="text-sm font-medium text-foreground">{title}</div>
       <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</div>
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2.5 flex items-center gap-2">
+        {step < total && (
+          <button
+            onClick={onSkip}
+            className="text-[11px] font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          >
+            Skip tutorial
+          </button>
+        )}
+        <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+          {step}/{total}
+        </span>
         <button
-          onClick={onDismiss}
+          onClick={onNext}
           className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Got it
