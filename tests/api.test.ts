@@ -63,3 +63,30 @@ describe("createCoverLetterPdf", () => {
     );
   });
 });
+
+describe("createWebHandoff", () => {
+  it("creates an authenticated one-time website link", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          url: "https://www.canvasjob.com/auth/extension?ticket=one-time-ticket",
+          expires_in: 60,
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await api.createWebHandoff({ destination: "/app?view=board" });
+
+    expect(result.expires_in).toBe(60);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/auth/web-handoffs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ destination: "/app?view=board" }),
+        headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+      }),
+    );
+  });
+});

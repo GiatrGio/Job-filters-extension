@@ -26,6 +26,8 @@ import type {
   GenerateCoverLetterResponse,
   MeResponse,
   ReorderRequest,
+  WebHandoffCreate,
+  WebHandoffCreateResponse,
 } from "@/shared/types";
 
 export class ApiError extends Error {
@@ -138,6 +140,12 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
 }
 
 export const api = {
+  createWebHandoff: (body: WebHandoffCreate) =>
+    request<WebHandoffCreateResponse>("/auth/web-handoffs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   evaluate: (body: EvaluateRequest) =>
     request<EvaluateResponse>("/evaluate", {
       method: "POST",

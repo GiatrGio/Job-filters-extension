@@ -102,6 +102,19 @@ Cloud OAuth redirect URI should stay pointed at Supabase's callback
 (`https://<project-ref>.supabase.co/auth/v1/callback`); the `chromiumapp.org`
 URL belongs in Supabase's redirect URL list.
 
+## Website session handoff
+
+Authenticated website CTAs use `openAuthenticatedWebPath()` instead of opening
+`VITE_WEB_URL` directly. The helper requests a short-lived, single-use URL from
+`POST /auth/web-handoffs`, validates that the returned URL uses the configured
+website origin, and opens it in a focused tab. The website then installs its own
+Supabase cookie session and redirects to the requested path. Extension access
+and refresh tokens are never placed in the URL or copied into website storage.
+
+If the handoff API is unavailable, the helper opens the ordinary destination so
+the user can still sign in manually. Future Settings links should use this same
+helper while the options UI moves to the web application.
+
 ## Layout
 
 ```

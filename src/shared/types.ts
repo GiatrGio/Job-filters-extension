@@ -300,6 +300,15 @@ export interface Application {
   updated_at: string;
 }
 
+export interface WebHandoffCreate {
+  destination: string;
+}
+
+export interface WebHandoffCreateResponse {
+  url: string;
+  expires_in: number;
+}
+
 // Scraped from the LinkedIn DOM by the content script.
 export interface ScrapedJob {
   linkedin_job_id: string;
