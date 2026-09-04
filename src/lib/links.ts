@@ -31,14 +31,13 @@ function openCompanySearch(
   openTab(url.toString());
 }
 
-// Open the extension's options page on a specific settings tab. We stash the
-// desired tab in storage and call openOptionsPage() (which reliably focuses an
-// existing options tab) rather than building a getURL()+hash, whose path is not
-// stable across dev/prod bundling. The options page reads + clears the key.
-export function openOptionsAt(tab: "filters" | "fit" | "cover"): void {
-  void chrome.storage.local.set({ pendingOptionsTab: tab }).then(() => {
-    chrome.runtime.openOptionsPage?.();
-  });
+// Settings live on the website, not in the extension — two settings surfaces
+// confused people about which one owned what. The website reads `?settings=`
+// and opens its Settings dialog on that tab.
+export type SettingsTab = "filters" | "fit" | "cover" | "account";
+
+export function openSettings(tab: SettingsTab = "filters"): void {
+  void openAuthenticatedWebPath(`/app?settings=${tab}`);
 }
 
 export function openPricing(): void {

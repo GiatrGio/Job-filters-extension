@@ -12,7 +12,7 @@ vi.mock("@/lib/env", () => ({
   ENV: { WEB_URL: "https://www.canvasjob.com" },
 }));
 
-import { openAuthenticatedWebPath } from "@/lib/links";
+import { openAuthenticatedWebPath, openSettings } from "@/lib/links";
 
 const createTab = vi.fn(async () => undefined);
 
@@ -73,5 +73,32 @@ describe("openAuthenticatedWebPath", () => {
     );
     expect(createWebHandoff).not.toHaveBeenCalled();
     expect(createTab).not.toHaveBeenCalled();
+  });
+});
+
+// Settings live on the website; the extension only deep-links into them.
+describe("openSettings", () => {
+  it("hands off to the website's settings dialog on the requested tab", async () => {
+    createWebHandoff.mockResolvedValue({
+      url: "https://www.canvasjob.com/auth/extension?ticket=abc",
+      expires_in: 60,
+    });
+
+    openSettings("cover");
+    await vi.waitFor(() => expect(createTab).toHaveBeenCalled());
+
+    expect(createWebHandoff).toHaveBeenCalledWith({ destination: "/app?settings=cover" });
+  });
+
+  it("defaults to the filters tab", async () => {
+    createWebHandoff.mockRejectedValue(new Error("offline"));
+
+    openSettings();
+    await vi.waitFor(() => expect(createTab).toHaveBeenCalled());
+
+    expect(createTab).toHaveBeenCalledWith({
+      url: "https://www.canvasjob.com/app?settings=filters",
+      active: true,
+    });
   });
 });

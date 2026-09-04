@@ -17,12 +17,14 @@ import {
   setSeenCoachMarks,
 } from "@/lib/storage";
 import { getAccessToken, SUPABASE_AUTH_STORAGE_KEY } from "@/lib/auth";
-import { openHowItWorks, openOptionsAt } from "@/lib/links";
+import { openHowItWorks, openSettings } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
 import { JobFitWidget } from "./components/JobFitWidget";
 import { TrackJobButton, type TrackedJobLimitInfo } from "./components/TrackJobButton";
 import { CoverLetterButton } from "./components/CoverLetterButton";
 import { CompanyResearchLinks } from "./components/CompanyResearchLinks";
+import { AccountButton } from "./components/AccountButton";
+import { SignInPanel } from "./components/SignInPanel";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
 const SIDEPANEL_HEARTBEAT_MS = 20_000;
@@ -326,8 +328,8 @@ export default function App() {
     }
   }
 
-  function openOptions() {
-    chrome.runtime.openOptionsPage?.();
+  function openFilterSettings() {
+    openSettings("filters");
   }
 
   async function markSeen(ids: CoachMarkId[]) {
@@ -397,7 +399,7 @@ export default function App() {
     }
 
     if (signedIn === false) {
-      return <SignedOutExplainer onOpenOptions={openOptions} />;
+      return <SignedOutExplainer />;
     }
 
     if (status.kind === "idle") {
@@ -474,7 +476,7 @@ export default function App() {
       );
     }
 
-    const { evaluation, cached } = status;
+    const { evaluation } = status;
     const { job, response } = evaluation;
     // Resolve the fit widget's state against THIS job. Anything other than a
     // matching ready/error result reads as "still loading" → shimmer.
@@ -488,10 +490,8 @@ export default function App() {
     return (
       <div className="p-4">
         <div className="mb-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">
-              {cached ? "Cached" : "Fresh"} evaluation
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <AccountButton />
             <div className="flex flex-wrap items-center justify-end gap-2">
               <div className="relative">
                 <CoverLetterButton job={job} />
@@ -515,7 +515,7 @@ export default function App() {
             loading={fitLoading}
             response={fitForJob}
             errored={fitErrored}
-            onOpenOptions={() => openOptionsAt("fit")}
+            onOpenOptions={() => openSettings("fit")}
           />
           {coachBubble("fit")}
         </div>
@@ -523,7 +523,7 @@ export default function App() {
         {response.results.length === 0 ? (
           <div className="text-sm text-muted-foreground">
             You haven't configured any filters yet.{" "}
-            <button className="font-medium text-primary underline-offset-4 hover:underline" onClick={openOptions}>
+            <button className="font-medium text-primary underline-offset-4 hover:underline" onClick={openFilterSettings}>
               Add some
             </button>
             .
@@ -539,6 +539,13 @@ export default function App() {
     );
   })();
 
+  // The account icon sits at the top left of the job card, alongside the Cover
+  // letter and Track this job buttons. Screens without a job card have no such
+  // row, so it gets its own — otherwise Settings and Log out would be out of
+  // reach until the user happened to open a LinkedIn job.
+  const evalHeaderHasAccountButton =
+    signedIn === true && status.kind === "ready" && trackedJobLimit?.plan !== "free";
+
   const inferredProFromUsage = usageOutgrewKnownFreeSnapshot(usage, me);
   const isProPlan = plan === "pro" || inferredProFromUsage;
   const isFreePlan = plan === "free" && !inferredProFromUsage;
@@ -549,7 +556,14 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <main className="flex-1 overflow-y-auto">{evalView}</main>
+      <main className="flex-1 overflow-y-auto">
+        {signedIn === true && !evalHeaderHasAccountButton && (
+          <div className="px-4 pt-4">
+            <AccountButton />
+          </div>
+        )}
+        {evalView}
+      </main>
 
       <footer className="border-t px-3 py-2 text-xs text-muted-foreground">
         {showFreeUsageWarning && (
@@ -571,9 +585,6 @@ export default function App() {
           ) : (
             <span>Usage will appear after your first evaluation</span>
           )}
-          <button onClick={openOptions} className="font-medium text-primary underline-offset-4 hover:underline">
-            Settings
-          </button>
         </div>
         <div className="mt-2 flex items-center gap-2">
           <button
@@ -758,7 +769,7 @@ function CoachBubble({
   );
 }
 
-function SignedOutExplainer({ onOpenOptions }: { onOpenOptions: () => void }) {
+function SignedOutExplainer() {
   const steps: Array<{ icon: React.ElementType; title: string; body: string }> = [
     {
       icon: ListChecks,
@@ -795,12 +806,7 @@ function SignedOutExplainer({ onOpenOptions }: { onOpenOptions: () => void }) {
           </li>
         ))}
       </ol>
-      <button
-        onClick={onOpenOptions}
-        className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-      >
-        Sign in to get started
-      </button>
+      <SignInPanel />
     </div>
   );
 }

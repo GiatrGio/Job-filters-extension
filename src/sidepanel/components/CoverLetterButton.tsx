@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { openOptionsAt } from "@/lib/links";
+import { openSettings } from "@/lib/links";
 import { getLastCoverLetter, setLastCoverLetter } from "@/lib/storage";
 import type {
   CoverLetterContent,
@@ -286,7 +286,7 @@ function CoverLetterSheet({ job, onClose }: { job: ScrapedJob; onClose: () => vo
             body="We need your name and contact details to put in the letter's header and signature."
             cta="Open cover letter settings"
             onCta={() => {
-              openOptionsAt("cover");
+              openSettings("cover");
               onClose();
             }}
           />
@@ -299,7 +299,7 @@ function CoverLetterSheet({ job, onClose }: { job: ScrapedJob; onClose: () => vo
             body="Your cover letter is written from your CV. Upload it once in Job fit settings."
             cta="Open Job fit settings"
             onCta={() => {
-              openOptionsAt("fit");
+              openSettings("fit");
               onClose();
             }}
           />
