@@ -510,16 +510,6 @@ export default function App() {
           <CompanyResearchLinks company={job.job_company} />
         </div>
 
-        <div className="relative mb-4">
-          <JobFitWidget
-            loading={fitLoading}
-            response={fitForJob}
-            errored={fitErrored}
-            onOpenOptions={() => openSettings("fit")}
-          />
-          {coachBubble("fit")}
-        </div>
-
         {response.results.length === 0 ? (
           <div className="text-sm text-muted-foreground">
             You haven't configured any filters yet.{" "}
@@ -535,6 +525,17 @@ export default function App() {
             ))}
           </ul>
         )}
+        <div className="relative mt-4">
+          <JobFitWidget
+            loading={fitLoading}
+            response={fitForJob}
+            errored={fitErrored}
+            onOpenOptions={() => openSettings("fit")}
+          />
+          {/* "above": the match meter is now the last thing in the scroll
+              area, so a bubble hanging below it would sit off-screen. */}
+          {coachBubble("fit", "above")}
+        </div>
       </div>
     );
   })();
@@ -585,6 +586,14 @@ export default function App() {
           ) : (
             <span>Usage will appear after your first evaluation</span>
           )}
+          {/* Also reachable from the account sheet, but that's two clicks and
+              users didn't find it there. */}
+          <button
+            onClick={openFilterSettings}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Settings
+          </button>
         </div>
         <div className="mt-2 flex items-center gap-2">
           <button
