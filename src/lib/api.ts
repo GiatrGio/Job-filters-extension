@@ -302,4 +302,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // Only used to count tracked jobs for the account sheet's meter — /me
+  // doesn't carry that number the way it carries evaluations and cover letters.
+  listApplications: () => request<Application[]>("/applications"),
 };

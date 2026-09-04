@@ -112,8 +112,15 @@ Supabase cookie session and redirects to the requested path. Extension access
 and refresh tokens are never placed in the URL or copied into website storage.
 
 If the handoff API is unavailable, the helper opens the ordinary destination so
-the user can still sign in manually. Future Settings links should use this same
-helper while the options UI moves to the web application.
+the user can still sign in manually.
+
+## Settings live on the website
+
+Filters, job fit and cover letter settings are edited in canvasjob-web's
+Settings dialog, not in the extension — two settings surfaces left users unsure
+which one owned what. `openSettings(tab)` deep-links into it through the handoff
+above (`/app?settings=<tab>`). The options page survives only to host the
+first-run onboarding wizard; the side panel owns sign-in and the account sheet.
 
 ## Layout
 
@@ -121,8 +128,8 @@ helper while the options UI moves to the web application.
 src/
 ├── background/    service worker — routes messages, calls backend
 ├── content/       DOM scraper (injected site-wide on linkedin.com; acts on job views)
-├── sidepanel/     side-panel React UI (result checklist)
-├── options/       options page React UI (auth + filter CRUD)
+├── sidepanel/     side-panel React UI (result checklist, sign-in, account sheet)
+├── options/       first-run onboarding wizard only (settings live on the website)
 ├── lib/           api client, Supabase auth, chrome.storage, LinkedIn selectors
 └── shared/        TypeScript types mirroring backend schemas
 ```

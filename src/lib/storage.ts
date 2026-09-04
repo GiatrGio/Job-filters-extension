@@ -53,23 +53,6 @@ export async function setOnboardingComplete(value: boolean): Promise<void> {
   await chrome.storage.local.set({ [ONBOARDING_COMPLETE_KEY]: value });
 }
 
-// Onboarding flags. Each is a boolean we flip to true once dismissed; absent
-// or false means the affected UI is still in its first-time state.
-const ONBOARDING_FLAGS = [
-  "starterBannerDismissed",
-  "howItWorksDismissed",
-] as const;
-export type OnboardingFlag = (typeof ONBOARDING_FLAGS)[number];
-
-export async function getOnboardingFlag(key: OnboardingFlag): Promise<boolean> {
-  const r = await chrome.storage.local.get(key);
-  return r[key] === true;
-}
-
-export async function setOnboardingFlag(key: OnboardingFlag, value: boolean): Promise<void> {
-  await chrome.storage.local.set({ [key]: value });
-}
-
 // Side panel coach-mark tour. We persist the ids the user has clicked through
 // rather than one "dismissed" boolean, so the tour resumes at the right step
 // when the panel is closed part-way and a mark added for a new feature only
