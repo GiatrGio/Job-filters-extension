@@ -10,6 +10,7 @@ import {
   MousePointer2,
   PanelRight,
   PartyPopper,
+  Pencil,
   Pin,
   Plus,
   Puzzle,
@@ -22,7 +23,6 @@ import { api, ApiError } from "@/lib/api";
 import { signInWithOAuth } from "@/lib/auth";
 import { CanvasjobLogo } from "@/shared/CanvasjobLogo";
 import {
-  FILTER_TEXT_MAX,
   MAX_FILTERS_PER_PROFILE,
   type FilterKind,
   type FilterOut,
@@ -34,15 +34,15 @@ import { NewFilterDraft } from "./NewFilterDraft";
 // the surface the extension is built for.
 const LINKEDIN_JOBS_URL = "https://www.linkedin.com/jobs/search/";
 
-// Ready-made questions users can tap to prefill the add box. They go through
-// the exact same validation as anything typed by hand — tapping only seeds the
-// text, it doesn't skip the quality check.
-const EXAMPLE_QUESTIONS = [
-  "Do they sponsor a work visa in Switzerland?",
-  "Is the salary above €4,000 per month?",
-  "Is the role fully remote within Europe?",
-  "Is this a permanent position rather than a contract?",
-  "Do they require German language skills?",
+// Ready-made questions users can tap to add. We wrote them, so tapping saves
+// one straight away, skipping the quality check typed questions go through —
+// which is also why each carries its kind instead of having it classified.
+const EXAMPLE_QUESTIONS: { text: string; kind: FilterKind }[] = [
+  { text: "Do they sponsor a work visa in Switzerland?", kind: "criterion" },
+  { text: "Is the salary above €4,000 per month?", kind: "criterion" },
+  { text: "Is the role fully remote within Europe?", kind: "criterion" },
+  { text: "Is this a permanent position rather than a contract?", kind: "criterion" },
+  { text: "Do they require German language skills?", kind: "criterion" },
 ];
 
 type Step = "welcome" | "filters" | "cv" | "done";
@@ -284,22 +284,26 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
   const [filters, setFilters] = useState<FilterOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Add-draft control. `adding` toggles the validated NewFilterDraft; `seed`
-  // + `draftKey` let an example chip prefill it (bumping the key remounts the
-  // draft so its internal text resets to the chosen example).
+  // `adding` toggles the validated NewFilterDraft for a new question.
   const [adding, setAdding] = useState(false);
-  const [seed, setSeed] = useState("");
-  const [draftKey, setDraftKey] = useState(0);
-  // `draftDirty` mirrors whether the open draft has unsaved text; `nudge`
-  // escalates the reminder (and pulses the ✓) after a blocked Continue.
+  // The saved question open for editing, if any. Confirming the edit runs it
+  // through the same validated draft as a new question.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Text of the example chip whose create call is in flight.
+  const [addingExample, setAddingExample] = useState<string | null>(null);
+  // `draftDirty` / `editDirty` mirror whether the add draft / open edit has
+  // unsaved text; `nudge` escalates the reminder (and pulses the ✓) after a
+  // blocked Continue.
   const [draftDirty, setDraftDirty] = useState(false);
+  const [editDirty, setEditDirty] = useState(false);
   const [nudge, setNudge] = useState(false);
   const draftRef = useRef<HTMLDivElement>(null);
+  const editRef = useRef<HTMLDivElement>(null);
 
-  // Once the draft is added or cleared, there's nothing left to nag about.
+  // Once the draft/edit is saved or cleared, there's nothing left to nag about.
   useEffect(() => {
-    if (!draftDirty) setNudge(false);
-  }, [draftDirty]);
+    if (!draftDirty && !editDirty) setNudge(false);
+  }, [draftDirty, editDirty]);
 
   useEffect(() => {
     void (async () => {
@@ -327,9 +331,9 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
 
   const atLimit = filters.length >= MAX_FILTERS_PER_PROFILE;
 
-  // Runs after the shared NewFilterDraft has validated the text (good verdict
-  // or an explicit "save anyway"). Rethrows on failure so the draft can reset
-  // its busy state and let the user retry.
+  // Runs after the shared NewFilterDraft has validated the text (good verdict,
+  // an explicit "save anyway", or a picked suggestion). Rethrows on failure so
+  // the draft can reset its busy state and let the user retry.
   async function createDraftFilter(text: string, kind: FilterKind | undefined) {
     if (!profileId) return;
     try {
@@ -339,7 +343,6 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
       });
       setFilters((prev) => [...prev, created]);
       setAdding(false);
-      setSeed("");
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -347,33 +350,47 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
     }
   }
 
-  function openDraft(seedText: string) {
-    if (atLimit) return;
-    setSeed(seedText);
-    setDraftKey((k) => k + 1);
-    setAdding(true);
+  // Same contract as createDraftFilter, for an edited question. A missing kind
+  // (the check couldn't run) leaves the stored kind as it was.
+  async function saveEdit(f: FilterOut, text: string, kind: FilterKind | undefined) {
+    try {
+      const updated = await api.updateFilter(f.id, { text, ...(kind ? { kind } : {}) });
+      setFilters((prev) => prev.map((x) => (x.id === f.id ? updated : x)));
+      setEditingId(null);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+      throw err;
+    }
+  }
+
+  // Examples skip the draft, and so its validation — see EXAMPLE_QUESTIONS.
+  async function addExample(example: (typeof EXAMPLE_QUESTIONS)[number]) {
+    if (!profileId || atLimit || addingExample) return;
+    setAddingExample(example.text);
+    try {
+      const created = await api.createFilter(profileId, example);
+      setFilters((prev) => [...prev, created]);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setAddingExample(null);
+    }
   }
 
   function handleContinue() {
-    // Don't leave a typed-but-unadded question behind — send the user back to
+    // Don't leave a typed-but-unsaved question behind — send the user back to
     // the ✓ button instead of silently dropping their input.
-    if (draftDirty) {
+    if (draftDirty || editDirty) {
       setNudge(true);
-      draftRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (draftDirty ? draftRef : editRef).current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
       return;
     }
     onNext();
-  }
-
-  async function commitText(f: FilterOut, text: string) {
-    const t = text.trim();
-    if (!t || t === f.text) return;
-    try {
-      const updated = await api.updateFilter(f.id, { text: t });
-      setFilters((prev) => prev.map((x) => (x.id === f.id ? updated : x)));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
-    }
   }
 
   async function remove(f: FilterOut) {
@@ -386,7 +403,7 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
   }
 
   const availableExamples = EXAMPLE_QUESTIONS.filter(
-    (ex) => !filters.some((f) => f.text.trim().toLowerCase() === ex.toLowerCase()),
+    (ex) => !filters.some((f) => f.text.trim().toLowerCase() === ex.text.toLowerCase()),
   );
 
   return (
@@ -405,9 +422,33 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
         <>
           {filters.length > 0 && (
             <div className="mt-6 space-y-2">
-              {filters.map((f) => (
-                <FilterRow key={f.id} filter={f} onCommit={commitText} onRemove={remove} />
-              ))}
+              {filters.map((f) =>
+                f.id === editingId ? (
+                  <div key={f.id} ref={editRef}>
+                    <NewFilterDraft
+                      originalText={f.text}
+                      onConfirm={(text, kind) => saveEdit(f, text, kind)}
+                      onCancel={() => setEditingId(null)}
+                      onDirtyChange={setEditDirty}
+                      highlightSave={nudge && editDirty}
+                    />
+                    {editDirty && (
+                      <UnsavedReminder urgent={nudge}>
+                        {nudge
+                          ? "Save this edit first — press the ✓ button above to save it."
+                          : "Not saved yet — press the ✓ button to save your edit."}
+                      </UnsavedReminder>
+                    )}
+                  </div>
+                ) : (
+                  <FilterRow
+                    key={f.id}
+                    filter={f}
+                    onEdit={() => setEditingId(f.id)}
+                    onRemove={remove}
+                  />
+                ),
+              )}
             </div>
           )}
 
@@ -415,27 +456,17 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
             {adding ? (
               <>
                 <NewFilterDraft
-                  key={draftKey}
-                  initialText={seed}
                   onConfirm={createDraftFilter}
-                  onCancel={() => {
-                    setAdding(false);
-                    setSeed("");
-                  }}
+                  onCancel={() => setAdding(false)}
                   onDirtyChange={setDraftDirty}
-                  highlightSave={nudge}
+                  highlightSave={nudge && draftDirty}
                 />
                 {draftDirty && (
-                  <p
-                    className={`mt-2 flex items-center gap-1.5 text-xs ${
-                      nudge ? "font-medium text-destructive" : "text-amber-600"
-                    }`}
-                  >
-                    <ArrowUp size={13} aria-hidden="true" />
+                  <UnsavedReminder urgent={nudge}>
                     {nudge
                       ? "Add this question first — press the ✓ button above to save it."
                       : "Not added yet — press the ✓ button to add this question."}
-                  </p>
+                  </UnsavedReminder>
                 )}
               </>
             ) : atLimit ? (
@@ -445,7 +476,7 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
             ) : (
               <button
                 type="button"
-                onClick={() => openDraft("")}
+                onClick={() => setAdding(true)}
                 className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-sm font-medium text-primary transition-colors hover:bg-accent/40"
               >
                 <Plus size={16} aria-hidden="true" /> Add a question
@@ -461,12 +492,18 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
               <div className="flex flex-wrap gap-2">
                 {availableExamples.map((ex) => (
                   <button
-                    key={ex}
+                    key={ex.text}
                     type="button"
-                    onClick={() => openDraft(ex)}
-                    className="rounded-full border bg-background px-3 py-1 text-xs text-foreground transition-colors hover:bg-accent"
+                    onClick={() => void addExample(ex)}
+                    disabled={addingExample !== null}
+                    className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-60"
                   >
-                    {ex}
+                    {addingExample === ex.text ? (
+                      <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Plus size={12} aria-hidden="true" />
+                    )}
+                    {ex.text}
                   </button>
                 ))}
               </div>
@@ -484,36 +521,49 @@ function FiltersStep({ onNext }: { onNext: () => void }) {
   );
 }
 
+// Reminder under an open draft that its text isn't saved yet; `urgent` after
+// the user tried to Continue past it.
+function UnsavedReminder({ urgent, children }: { urgent: boolean; children: React.ReactNode }) {
+  return (
+    <p
+      className={`mt-2 flex items-center gap-1.5 text-xs ${
+        urgent ? "font-medium text-destructive" : "text-amber-600"
+      }`}
+    >
+      <ArrowUp size={13} aria-hidden="true" />
+      {children}
+    </p>
+  );
+}
+
+// A saved question. Read-only until the user presses Edit, so a change can't
+// be saved without going through the quality check.
 function FilterRow({
   filter,
-  onCommit,
+  onEdit,
   onRemove,
 }: {
   filter: FilterOut;
-  onCommit: (f: FilterOut, text: string) => void;
+  onEdit: () => void;
   onRemove: (f: FilterOut) => void;
 }) {
-  const [text, setText] = useState(filter.text);
-  useEffect(() => setText(filter.text), [filter.text]);
-
   return (
     <div className="flex items-center gap-2 rounded-lg border bg-background px-2 py-1.5">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary/10 text-primary">
         <Check size={13} aria-hidden="true" />
       </span>
-      <input
-        value={text}
-        maxLength={FILTER_TEXT_MAX}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => onCommit(filter, text)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        className="min-w-0 flex-1 rounded-md bg-transparent px-1 py-1 text-sm text-foreground outline-none focus:bg-muted/50"
-      />
+      <span className="min-w-0 flex-1 break-words px-1 py-1 text-sm text-foreground">
+        {filter.text}
+      </span>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label="Edit question"
+        title="Edit"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Pencil size={15} aria-hidden="true" />
+      </button>
       <button
         type="button"
         onClick={() => onRemove(filter)}
