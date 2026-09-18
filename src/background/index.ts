@@ -17,6 +17,7 @@
 // next render.
 
 import { api, ApiError } from "@/lib/api";
+import { recordJobFit, recordJobVerdict, recordJobVisit } from "@/lib/jobMemory";
 import { setLastEvaluation, setLastFit, setOnboardingComplete } from "@/lib/storage";
 import type {
   DomDiagnosticsPayload,
@@ -51,6 +52,10 @@ async function evaluateJob(job: ScrapedJob): Promise<void> {
     const response = await api.evaluate(job);
     const stored: StoredEvaluation = { job, response, storedAt: Date.now() };
     await setLastEvaluation(stored);
+    // Remember the verdict so the job's card in LinkedIn's list can show it
+    // later without another call. This also records the filter set behind it as
+    // the active one, which is how stale verdicts stop being shown.
+    void recordJobVerdict(job.linkedin_job_id, response.results, { title: job.job_title });
     await forwardToSidepanel({ type: "EVALUATION_READY", job, response });
   } catch (err) {
     const status = err instanceof ApiError ? err.status : undefined;
@@ -79,6 +84,7 @@ async function evaluateFit(job: ScrapedJob): Promise<void> {
       storedAt: Date.now(),
     };
     await setLastFit(stored);
+    void recordJobFit(job.linkedin_job_id, response.fit?.score);
     await forwardToSidepanel({ type: "FIT_READY", job, response });
   } catch (err) {
     const status = err instanceof ApiError ? err.status : undefined;
@@ -215,6 +221,12 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, _sendR
   }
   if (message.type === "SCRAPE_FAILED") {
     void handleScrapeFailed(message.jobId, message.diagnostics);
+    return false;
+  }
+  if (message.type === "LOG_JOB_VISIT") {
+    // Recorded whether or not the side panel is open — it costs nothing and
+    // a visit the user made with the panel closed is still a visit.
+    void recordJobVisit(message.jobId, { title: message.title });
     return false;
   }
   if (message.type === "REQUEST_EVALUATION") {

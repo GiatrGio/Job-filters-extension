@@ -382,6 +382,12 @@ export type ExtensionMessage =
   // Sent when extraction failed outright (no description anywhere). The side
   // panel shows the "LinkedIn changed" wall; the background fires a diagnostic.
   | { type: "SCRAPE_FAILED"; jobId: string; diagnostics: DomDiagnosticsPayload }
+  // Sent by the content script once a job has stayed on screen long enough to
+  // count as a real visit (see the dwell gate in src/content/index.ts). Kept
+  // separate from JOB_SCRAPED because that message fires as soon as the DOM is
+  // readable — including for the job LinkedIn auto-selects when a search page
+  // loads, which the user never chose to open.
+  | { type: "LOG_JOB_VISIT"; jobId: string; title?: string | null }
   | { type: "RESCAN" }
   | { type: "REQUEST_RESCAN" }
   | { type: "SIDEPANEL_HEARTBEAT" }
@@ -400,4 +406,69 @@ export interface StoredFit {
   jobId: string;
   response: EvaluateFitResponse;
   storedAt: number;
+}
+
+// --- Job memory (locally remembered jobs) ----------------------------------
+// A device-local record of the jobs the user has opened, plus the cheap summary
+// of what we already told them about each one. Written by the background worker
+// (visits, verdicts, fit) and the side panel (tracker state); read by the side
+// panel's "seen before" chips and by the content script that badges the job
+// cards in LinkedIn's list.
+//
+// Deliberately NOT sent to the backend: nothing here leaves the device, which
+// keeps view history out of our retained data. The trade-off is that the
+// history is per-browser; a cross-device version would need its own table and
+// a privacy-policy entry.
+
+// One filter line as we showed it, trimmed for storage. Only kept for the most
+// recently seen jobs (see EVIDENCE_TIER in lib/jobMemory.ts) — it exists purely
+// so the job-card hover popover can replay the answer without a network call.
+export interface JobEvidenceLine {
+  filter: string;
+  pass: EvaluationPass;
+  evidence: string;
+}
+
+export interface JobVerdictSummary {
+  // Signature of the filter set this verdict came from. A verdict whose
+  // signature no longer matches the user's active filters is stale and is not
+  // shown — editing a filter or switching profile invalidates it, exactly like
+  // the backend's filters_hash invalidates the server-side cache.
+  sig: string;
+  passed: number;
+  failed: number;
+  unknown: number;
+  total: number;
+  at: number;
+  lines?: JobEvidenceLine[];
+}
+
+export interface JobTrackerSummary {
+  status: ApplicationStatus;
+  appliedAt: string | null;
+}
+
+export interface JobMemoryEntry {
+  firstSeenAt: number;
+  lastSeenAt: number;
+  // Number of *completed* visits. A visit in progress is not counted yet, so
+  // a panel reading this entry while the user looks at the job sees the count
+  // from before — which is what "you have been here before" has to mean.
+  visits: number;
+  title?: string | null;
+  verdict?: JobVerdictSummary;
+  // Overall CV match, 1-5, from /evaluate-fit. Keyed by the CV server-side, so
+  // a re-uploaded CV makes this stale until the job is opened again; the score
+  // is coarse enough that a slightly old one is still useful.
+  fit?: number;
+  tracker?: JobTrackerSummary;
+}
+
+export interface JobMemoryIndex {
+  version: 1;
+  // Signature of the filters behind the most recent evaluation, i.e. the
+  // user's currently active set. Compared against each entry's verdict.sig to
+  // decide whether a remembered verdict is still valid.
+  activeFiltersSig: string | null;
+  jobs: Record<string, JobMemoryEntry>;
 }

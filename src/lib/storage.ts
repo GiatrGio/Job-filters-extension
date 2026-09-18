@@ -1,4 +1,4 @@
-import type { StoredCoverLetter, StoredEvaluation, StoredFit } from "@/shared/types";
+import type { JobMemoryIndex, StoredCoverLetter, StoredEvaluation, StoredFit } from "@/shared/types";
 
 const LAST_EVAL_KEY = "lastEvaluation";
 const LAST_FIT_KEY = "lastFit";
@@ -68,4 +68,20 @@ export async function getSeenCoachMarks(): Promise<string[]> {
 
 export async function setSeenCoachMarks(ids: string[]): Promise<void> {
   await chrome.storage.local.set({ [COACH_MARKS_SEEN_KEY]: ids });
+}
+
+// Job memory — every job the user has opened, with the summary of what we
+// already told them about it. One key holding the whole index: reads happen on
+// every LinkedIn page load (the content script badges job cards from it) and a
+// single get is far cheaper than one per card. See lib/jobMemory.ts for the
+// merge logic and the caps that keep this blob small.
+export const JOB_MEMORY_KEY = "jobMemory";
+
+export async function getJobMemoryIndex(): Promise<JobMemoryIndex | null> {
+  const r = await chrome.storage.local.get(JOB_MEMORY_KEY);
+  return (r[JOB_MEMORY_KEY] as JobMemoryIndex) ?? null;
+}
+
+export async function setJobMemoryIndex(value: JobMemoryIndex): Promise<void> {
+  await chrome.storage.local.set({ [JOB_MEMORY_KEY]: value });
 }

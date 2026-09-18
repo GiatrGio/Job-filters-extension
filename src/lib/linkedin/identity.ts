@@ -10,7 +10,10 @@ export function getJobIdFromUrl(url: string = location.href): string | null {
   const viewMatch = url.match(/\/jobs\/view\/(\d+)/);
   if (viewMatch) return viewMatch[1];
   try {
-    const u = new URL(url);
+    // Resolve against linkedin.com so a RELATIVE href works too — job cards in
+    // the list carry `/jobs/collections/…?currentJobId=…`, and the property
+    // form (`anchor.href`) is not reliable inside the preload iframe.
+    const u = new URL(url, "https://www.linkedin.com");
     const q = u.searchParams.get("currentJobId");
     if (q) return q;
   } catch {

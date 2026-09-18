@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { recordTrackedJobs } from "@/lib/jobMemory";
 import { signOut } from "@/lib/auth";
 import { FREE_TRACKED_JOB_LIMIT } from "@/lib/limits";
 import { openPricing, openSettings } from "@/lib/links";
@@ -58,6 +59,10 @@ function AccountSheet({ onClose }: { onClose: () => void }) {
       if (cancelled) return;
       setMe(meRes);
       setTrackedJobs(apps?.length ?? null);
+      // Free side effect: the full tracker list is what lets a job applied to
+      // on another device (or on the website) still show its badge on the job
+      // cards in LinkedIn's list here.
+      if (apps) void recordTrackedJobs(apps);
       setLoading(false);
     })();
     return () => {

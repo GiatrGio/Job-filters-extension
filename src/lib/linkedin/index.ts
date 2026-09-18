@@ -5,6 +5,9 @@
 export { getJobIdFromUrl, jobMetaFromDocTitle } from "./identity";
 export { extractJob, scrapeJob, waitForJobContent } from "./registry";
 export { buildDomDiagnostics } from "./diagnostics";
+export { candidateDocuments } from "./dom";
+export { scanAllJobCards, scanJobCards } from "./list/registry";
+export type { JobCardRef, JobListAdapter, JobListScan } from "./list/types";
 export type {
   ExtractionContext,
   ExtractionFields,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, CircleArrowUp, HelpCircle, ListChecks, RefreshCw, Search, Wrench } from "lucide-react";
 import type {
+  Application,
   EvaluateFitResponse,
   ExtensionMessage,
   FilterProfileWithFilters,
@@ -16,6 +17,7 @@ import {
   getSeenCoachMarks,
   setSeenCoachMarks,
 } from "@/lib/storage";
+import { recordJobTracker } from "@/lib/jobMemory";
 import { getAccessToken, SUPABASE_AUTH_STORAGE_KEY } from "@/lib/auth";
 import { openHowItWorks, openSettings } from "@/lib/links";
 import { ResultRow } from "./components/ResultRow";
@@ -25,6 +27,7 @@ import { CoverLetterButton } from "./components/CoverLetterButton";
 import { CompanyResearchLinks } from "./components/CompanyResearchLinks";
 import { AccountButton } from "./components/AccountButton";
 import { CoachBubble } from "./components/CoachBubble";
+import { TrackerStatusChip } from "./components/TrackerStatusChip";
 import { SignInPanel } from "./components/SignInPanel";
 
 const SIDEPANEL_PORT_NAME = "sidepanel";
@@ -111,6 +114,9 @@ export default function App() {
   // to /me's session-start snapshot.
   const [usage, setUsage] = useState<UsageOut | null>(null);
   const [trackedJobLimit, setTrackedJobLimit] = useState<TrackedJobLimitInfo | null>(null);
+  // The tracker row for the job on screen. `undefined` until the probe answers,
+  // so the memory line doesn't flash a chip before we know the answer.
+  const [trackedApp, setTrackedApp] = useState<Application | null | undefined>(undefined);
   // Coach-marks progress: null = unknown (still loading it from storage),
   // otherwise the ids already clicked through. The tour shows the first unseen
   // step and ends when every id is in here.
@@ -250,6 +256,7 @@ export default function App() {
     const onMessage = (msg: ExtensionMessage) => {
       if (msg.type === "JOB_SCRAPED") {
         setTrackedJobLimit(null);
+        setTrackedApp(undefined);
         setStatus({ kind: "loading", jobId: msg.job.linkedin_job_id });
         setFitState({ kind: "loading", jobId: msg.job.linkedin_job_id });
       } else if (msg.type === "FIT_READY") {
@@ -306,6 +313,15 @@ export default function App() {
       }
     };
   }, []);
+
+  // Mirror the tracker state of the job on screen into job memory, so its card
+  // in LinkedIn's list can carry an "Applied" badge months later. One writer
+  // for one fact: the button reports, the panel records.
+  const currentJobId = status.kind === "ready" ? status.evaluation.job.linkedin_job_id : null;
+  useEffect(() => {
+    if (!currentJobId || trackedApp === undefined) return;
+    void recordJobTracker(currentJobId, trackedApp);
+  }, [currentJobId, trackedApp]);
 
   async function onChangeProfile(id: string) {
     if (id === activeProfileId || switchingProfile) return;
@@ -499,7 +515,11 @@ export default function App() {
                 {coachBubble("coverLetter")}
               </div>
               <div className="relative">
-                <TrackJobButton job={job} onLimitExceeded={setTrackedJobLimit} />
+                <TrackJobButton
+                  job={job}
+                  onLimitExceeded={setTrackedJobLimit}
+                  onTrackedChange={setTrackedApp}
+                />
                 {coachBubble("trackJob")}
               </div>
             </div>
@@ -508,6 +528,7 @@ export default function App() {
           <div className="text-sm text-muted-foreground">
             {[job.job_company, job.job_location].filter(Boolean).join(" · ")}
           </div>
+          <TrackerStatusChip tracker={trackedApp} />
           <CompanyResearchLinks company={job.job_company} />
         </div>
 

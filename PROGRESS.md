@@ -85,7 +85,40 @@
 - After Chrome Web Store assigns the extension ID, add its
   `chrome-extension://<id>` origin to the deployed backend CORS allowlist.
 
+## Job memory ("seen before") — added 2026-09-18
+
+- `src/lib/jobMemory.ts` keeps a local index of opened jobs in
+  `chrome.storage.local` (`jobMemory`). Written by the background worker
+  (visits, verdicts, fit) and the side panel (tracker state). Never uploaded.
+- Side panel: `TrackerStatusChip` renders the tracker status under the job
+  title, only once it is past "saved".
+- LinkedIn's job cards: `src/content/decorate.ts` badges each card with the
+  remembered verdict, match and tracker state, with a hover popover replaying
+  the saved evidence. Cards are located by `src/lib/linkedin/list/`: `cards-v2`
+  reads the id off the card element (`componentkey` on /jobs/search-results/,
+  `data-occludable-job-id` on /jobs/search/), `cards-v1` climbs from a job link
+  for surfaces with neither. Both run and their results merge, so the list card
+  and the details pane are each badged.
+- **No "seen before" badge** — LinkedIn already labels viewed jobs (decided
+  2026-09-18). Visits are still recorded; only the display was dropped.
+- Covered by `tests/job-memory.test.ts`, `tests/job-list.test.ts` and
+  `tests/tracker-status-chip.test.ts` (virtualisation remount, stale verdicts,
+  the job-details pane, flex-card layout, filter pills, budgeting).
+
 ## Known trade-offs worth remembering
+
+- Job memory has no off switch yet. Indicators simply never appear until the
+  user has opened a job, so a new install sees no change — but if anyone asks
+  to turn it off, the toggle belongs in the options page, read by both
+  `JobMemoryChips` and `startJobListDecoration`.
+- The list decorator only knows about jobs opened in THIS browser (plus
+  tracked jobs, which sync through `/applications`). A user on a second
+  machine starts from a blank memory. A one-time backfill from the backend's
+  `evaluations` table would fix the first-run emptiness without storing view
+  history server-side.
+- Badge colours are light chips with dark text, which stay legible on
+  LinkedIn's dark theme but sit brighter than its own surfaces. If LinkedIn
+  dark mode ever looks wrong, that is where to look.
 
 - The side panel subscribes to `chrome.runtime.onMessage`. When the panel is
   closed, messages are lost — the panel rebuilds state on open by reading

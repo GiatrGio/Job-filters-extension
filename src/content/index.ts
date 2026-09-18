@@ -19,9 +19,17 @@
 
 import { buildDomDiagnostics, getJobIdFromUrl, waitForJobContent } from "@/lib/linkedin";
 import type { ExtensionMessage } from "@/shared/types";
+import { startJobListDecoration } from "./decorate";
 
 const DEBOUNCE_MS = 1500;
 const URL_POLL_MS = 1000;
+// How long a job must stay on screen, after it was scraped, before it counts as
+// a visit. LinkedIn auto-selects the first card of every search result, so
+// without this gate the top job of every search would be marked "seen" without
+// the user ever choosing it. Combined with the debounce and the extraction
+// wait, a visit means roughly four seconds of the job actually being in front
+// of the user.
+const VISIT_DWELL_MS = 2500;
 
 type CanvasjobContentState = {
   rescan: () => void;
@@ -52,6 +60,9 @@ if (canvasWindow.__canvasjobContentScript) {
 function install(): CanvasjobContentState {
   let lastHandledJobId: string | null = null;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  // The job waiting to be counted as a visit, held until the dwell gate passes.
+  let pendingVisit: { jobId: string; title: string | null } | null = null;
+  let visitTimer: ReturnType<typeof setTimeout> | null = null;
 
   function send(message: ExtensionMessage): void {
     try {
@@ -97,6 +108,33 @@ function install(): CanvasjobContentState {
       job: result.job,
       diagnostics: result.outcome === "partial" ? buildDomDiagnostics(result) : undefined,
     });
+    scheduleVisit(result.jobId, result.job.job_title);
+  }
+
+  // --- visit gate ------------------------------------------------------------
+  // Recorded by the background worker, deliberately independent of whether the
+  // side panel is open: "I have opened this before" has to be true for jobs the
+  // user skimmed with the panel closed too.
+
+  function flushVisit(): void {
+    visitTimer = null;
+    if (!pendingVisit) return;
+    // The user moved on before the gate elapsed — that was a glance, not a visit.
+    if (getJobIdFromUrl() !== pendingVisit.jobId) {
+      pendingVisit = null;
+      return;
+    }
+    // Opened in a background tab: keep it pending and count it if and when the
+    // user actually switches to the tab (see the visibilitychange listener).
+    if (document.visibilityState !== "visible") return;
+    send({ type: "LOG_JOB_VISIT", jobId: pendingVisit.jobId, title: pendingVisit.title });
+    pendingVisit = null;
+  }
+
+  function scheduleVisit(jobId: string, title: string | null): void {
+    pendingVisit = { jobId, title };
+    if (visitTimer) clearTimeout(visitTimer);
+    visitTimer = setTimeout(flushVisit, VISIT_DWELL_MS);
   }
 
   function scheduleHandle(): void {
@@ -149,6 +187,15 @@ function install(): CanvasjobContentState {
       scheduleHandle();
     }
   }, URL_POLL_MS);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && pendingVisit && !visitTimer) {
+      visitTimer = setTimeout(flushVisit, VISIT_DWELL_MS);
+    }
+  });
+
+  // Badge LinkedIn's own job cards with what we already know about each job.
+  startJobListDecoration();
 
   // The background worker asks for a re-scan when the side panel opens, so the
   // user sees a result for the job they're already viewing.

@@ -22,9 +22,14 @@ export type TrackedJobLimitInfo = {
 export function TrackJobButton({
   job,
   onLimitExceeded,
+  onTrackedChange,
 }: {
   job: ScrapedJob;
   onLimitExceeded: (info: TrackedJobLimitInfo) => void;
+  // Reports the tracked row (or null once confirmed untracked) to the panel,
+  // which renders the status chip in the memory line and mirrors it into job
+  // memory so the job's card in LinkedIn's list can show it too.
+  onTrackedChange?: (application: Application | null) => void;
 }) {
   const [tracked, setTracked] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +46,10 @@ export function TrackJobButton({
     void (async () => {
       try {
         const existing = await api.getApplicationByJob("linkedin", job.linkedin_job_id);
-        if (!cancelled) setTracked(existing);
+        if (!cancelled) {
+          setTracked(existing);
+          onTrackedChange?.(existing);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : String(err));
@@ -69,6 +77,7 @@ export function TrackJobButton({
         description: job.job_description,
       });
       setTracked(created);
+      onTrackedChange?.(created);
     } catch (err) {
       const limitInfo = trackedJobLimitInfo(err);
       if (limitInfo?.plan === "free") {
